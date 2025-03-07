@@ -209,10 +209,13 @@ class VideoHost:
     def start(self):
         """Start the video hosting server in a separate thread."""
         # Add status route
-        self.app.route('/status')(lambda: Response(
-            json.dumps(self.get_status()),
-            mimetype='application/json'
-        ))
+        @self.app.route('/status')
+        def get_status_route():
+            status_data = self.get_status()
+            return Response(
+                json.dumps(status_data),
+                mimetype='application/json'
+            )
         
         def run_server():
             self.app.run(host='0.0.0.0', port=self.port, threaded=True)

@@ -7,6 +7,7 @@ import math
 import datetime
 import cv2
 import numpy as np
+import base64  # Add base64 import
 
 # Add server directory to Python path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'server'))
@@ -37,7 +38,7 @@ class MotionDetector:
             
         # Convert bytes to numpy array
         nparr = np.frombuffer(frame, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)  # Changed from COLOR_BGR2GRAY
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         if img is None:
             print("Failed to decode image")
             return None
@@ -99,9 +100,9 @@ class MotionDetector:
                     'distance': distance
                 }
                 
-                # Save detection information
+                # Save detection information with base64 encoded image
                 _, buffer = cv2.imencode('.jpg', img)
-                self.last_detection_image = buffer.tobytes()
+                self.last_detection_image = base64.b64encode(buffer).decode('utf-8')
                 self.detection_info = {
                     'timestamp': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                     'position': self.object_position,
