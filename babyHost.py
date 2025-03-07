@@ -141,8 +141,6 @@ class VideoHost:
                         background: #2a2a2a;
                         padding: 15px;
                         border-radius: 5px;
-                        max-height: calc(100vh - 100px);  /* Leave room for header */
-                        overflow-y: auto;
                     }
                     .history-title {
                         font-size: 16px;
@@ -150,23 +148,9 @@ class VideoHost:
                         color: #00ff00;
                     }
                     .history-grid {
-                        display: flex;
-                        flex-direction: column;
+                        display: grid;
+                        grid-template-columns: repeat(2, 1fr);
                         gap: 15px;
-                        overflow-y: auto;
-                        padding-right: 10px;  /* Space for scrollbar */
-                    }
-                    /* Scrollbar styling */
-                    .history-grid::-webkit-scrollbar {
-                        width: 8px;
-                    }
-                    .history-grid::-webkit-scrollbar-track {
-                        background: #1a1a1a;
-                        border-radius: 4px;
-                    }
-                    .history-grid::-webkit-scrollbar-thumb {
-                        background: #00ff00;
-                        border-radius: 4px;
                     }
                     .history-item {
                         background: #1a1a1a;
@@ -286,14 +270,13 @@ class VideoHost:
                         if (data.detection_info) {
                             drawDetectionOverlay(ctx, data.detection_info, canvas.width, canvas.height);
                             
-                            // Don't clear overlay automatically - it will be cleared on next update
+                            // Clear overlay after 2 seconds
                             if (overlayTimeout) {
                                 clearTimeout(overlayTimeout);
-                                overlayTimeout = null;
                             }
-                        } else {
-                            // Only clear if no detection info
-                            ctx.clearRect(0, 0, canvas.width, canvas.height);
+                            overlayTimeout = setTimeout(() => {
+                                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                            }, 2000);
                         }
                     }
                     
