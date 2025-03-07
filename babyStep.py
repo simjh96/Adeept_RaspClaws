@@ -216,28 +216,37 @@ def move_to_object(position):
         steps = min(abs(int(turn_angle / 10)), 4)
         
         for _ in range(steps):
-            safe_move(1, 35, direction)
-            time.sleep(0.1)
-            safe_move(2, 35, direction)
-            time.sleep(0.1)
-            safe_move(3, 35, direction)
-            time.sleep(0.1)
-            safe_move(4, 35, direction)
-            time.sleep(0.1)
+            # Check right leg (leg 2) movement
+            with servo_lock:
+                move.move(1, 35, direction)
+                time.sleep(0.1)
+                try:
+                    move.move(2, 35, direction)  # Add extra error handling for right leg
+                except Exception as e:
+                    print(f"Error moving right leg: {e}")
+                time.sleep(0.1)
+                move.move(3, 35, direction)
+                time.sleep(0.1)
+                move.move(4, 35, direction)
+                time.sleep(0.1)
     
-    # Move forward for 2 seconds
+    # Move forward for exactly 2 seconds
     start_time = time.time()
-    while time.time() - start_time < 2:  # Changed from 5 to 2 seconds
-        safe_move(1, 35, 'no')
-        time.sleep(0.1)
-        safe_move(2, 35, 'no')
-        time.sleep(0.1)
-        safe_move(3, 35, 'no')
-        time.sleep(0.1)
-        safe_move(4, 35, 'no')
-        time.sleep(0.1)
+    while time.time() - start_time < 2:
+        with servo_lock:
+            move.move(1, 35, 'no')
+            time.sleep(0.1)
+            try:
+                move.move(2, 35, 'no')  # Add extra error handling for right leg
+            except Exception as e:
+                print(f"Error moving right leg: {e}")
+            time.sleep(0.1)
+            move.move(3, 35, 'no')
+            time.sleep(0.1)
+            move.move(4, 35, 'no')
+            time.sleep(0.1)
     
-    # Stop
+    # Stop and stand
     with servo_lock:
         move.stand()
 
@@ -246,45 +255,56 @@ def sequence_with_status():
         host.update_status("Initializing robot position...")
         initialize_robot()
         
-        while True:  # Main detection loop
-            host.update_status("Starting movement sequence...")
-            perform_movement_sequence()
-            host.update_status("Movement sequence completed.")
+        # Store last known position
+        last_position = None
+        last_head_position = None
+        
+        while True:  # Main loop
+            host.update_status("Starting detection sequence...")
             
-            time.sleep(2)
+            # Turn on red LED for detection mode
+            LED.colorWipe(LED.strip, Color(255, 0, 0))  # Red
             
-            while True:  # Detection loop
-                host.update_status("Starting motion detection...")
-                # Reset motion detector for new detection sequence
-                detector.reset_detection()
-                
-                position = None
-                detection_count = 0
-                required_detections = 3
-                last_detection_time = None
-                
-                # Wait for background model to initialize
-                time.sleep(1)
-                
-                while detection_count < required_detections:
-                    position = detector.detect_motion()
-                    if position:
-                        current_time = time.time()
-                        if last_detection_time is None or current_time - last_detection_time > 1.0:
-                            detection_count += 1
-                            last_detection_time = current_time
-                            host.update_status(f"Motion detected ({detection_count}/{required_detections})")
-                            time.sleep(0.5)
-                    time.sleep(0.1)
-                
+            # Reset motion detector for new detection sequence
+            detector.reset_detection()
+            
+            # If we have a last position, try to look there first
+            if last_position and last_head_position:
+                host.update_status("Returning to last detected position...")
+                with servo_lock:
+                    # Restore head position
+                    move.move_head(last_head_position['x'], last_head_position['y'])
+                    time.sleep(0.5)
+            
+            # Wait for background model to initialize
+            time.sleep(1)
+            
+            position = None
+            while not position:  # Detection loop
+                position = detector.detect_motion()
                 if position:
-                    host.update_status(f"Object detected at position: {position}")
+                    host.update_status("Motion detected! Moving to target...")
+                    
+                    # Store current head position before moving
+                    with servo_lock:
+                        last_head_position = {
+                            'x': move.get_head_x(),
+                            'y': move.get_head_y()
+                        }
+                    last_position = position
+                    
+                    # Turn on blue LED for movement
+                    LED.colorWipe(LED.strip, Color(0, 0, 255))  # Blue
+                    
+                    # Move towards object for 2 seconds
                     move_to_object(position)
-                    host.update_status("Movement to object completed. Standing by.")
+                    
+                    # Turn off LEDs
+                    LED.colorWipe(LED.strip, Color(0, 0, 0))
                     
                     # Wait before starting next detection
-                    time.sleep(3)
-                    break  # Break inner loop to restart movement sequence
+                    time.sleep(1)
+                    break  # Break detection loop to start new sequence
                 
                 time.sleep(0.1)  # Small delay between detection attempts
             
@@ -292,6 +312,7 @@ def sequence_with_status():
         error_msg = f"Error in main sequence: {e}"
         print(error_msg)
         host.update_status(error_msg)
+        LED.colorWipe(LED.strip, Color(0, 0, 0))  # Turn off LEDs
         with servo_lock:
             move.clean_all()
 
