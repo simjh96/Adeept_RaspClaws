@@ -570,60 +570,62 @@ class VideoHost:
                             .then(response => response.json())
                             .then(data => {
                                 const statusBox = document.getElementById('processStatus');
-                                let statusText = '';
-                                
-                                // Add status history with escaped newlines
-                                if (data.status_history && data.status_history.length > 0) {
-                                    statusText = data.status_history.join('\\n') + '\\n\\n';
-                                }
-                                
-                                statusText += 'Current Status: ' + data.status + '\\n';
-                                
-                                if (data.movement_info) {
-                                    statusText += '\\nMovement Info:\\n' + data.movement_info.status + '\\n';
-                                    if (data.movement_info.progress) {
-                                        statusText += 'Progress: ' + data.movement_info.progress + '%\\n';
-                                    }
-                                    if (data.movement_info.details) {
-                                        statusText += 'Details: ' + data.movement_info.details + '\\n';
+                                if (statusBox) {  // Add null check
+                                    let statusText = '';
+                                    
+                                    // Add status history with escaped newlines
+                                    if (data.status_history && data.status_history.length > 0) {
+                                        statusText = data.status_history.join('\\n') + '\\n\\n';
                                     }
                                     
-                                    // Update robot position and map
-                                    if (data.movement_info.position) {
-                                        const newPos = data.movement_info.position;
-                                        if (robotPosition.x !== newPos.x || 
-                                            robotPosition.y !== newPos.y || 
-                                            robotPosition.angle !== newPos.angle) {
-                                            robotPosition = {...newPos};
-                                            pathHistory.push({...newPos});
-                                            updateMap(data);
+                                    statusText += 'Current Status: ' + data.status + '\\n';
+                                    
+                                    if (data.movement_info) {
+                                        statusText += '\\nMovement Info:\\n' + data.movement_info.status + '\\n';
+                                        if (data.movement_info.progress) {
+                                            statusText += 'Progress: ' + data.movement_info.progress + '%\\n';
+                                        }
+                                        if (data.movement_info.details) {
+                                            statusText += 'Details: ' + data.movement_info.details + '\\n';
+                                        }
+                                        
+                                        // Update robot position and map
+                                        if (data.movement_info.position) {
+                                            const newPos = data.movement_info.position;
+                                            if (robotPosition.x !== newPos.x || 
+                                                robotPosition.y !== newPos.y || 
+                                                robotPosition.angle !== newPos.angle) {
+                                                robotPosition = {...newPos};
+                                                pathHistory.push({...newPos});
+                                                updateMap(data);
+                                            }
                                         }
                                     }
-                                }
-                                
-                                if (data.head_movement_info) {
-                                    statusText += '\\nHead Movement:\\n';
-                                    statusText += 'Position: X=' + data.head_movement_info.x + ', Y=' + data.head_movement_info.y + '\\n';
-                                    if (data.head_movement_info.target) {
-                                        statusText += 'Target: X=' + data.head_movement_info.target.x + ', Y=' + data.head_movement_info.target.y + '\\n';
+                                    
+                                    if (data.head_movement_info) {
+                                        statusText += '\\nHead Movement:\\n';
+                                        statusText += 'Position: X=' + data.head_movement_info.x + ', Y=' + data.head_movement_info.y + '\\n';
+                                        if (data.head_movement_info.target) {
+                                            statusText += 'Target: X=' + data.head_movement_info.target.x + ', Y=' + data.head_movement_info.target.y + '\\n';
+                                        }
                                     }
-                                }
-                                
-                                statusBox.innerText = statusText;
-                                
-                                if (data.detection_info && data.last_detection_image) {
-                                    updateOverlay(data);
                                     
-                                    const detection = {
-                                        image: data.last_detection_image,
-                                        info: data.detection_info
-                                    };
+                                    statusBox.innerText = statusText;
                                     
-                                    const lastDetection = detectionHistory[0];
-                                    if (!lastDetection || 
-                                        lastDetection.info.timestamp !== detection.info.timestamp) {
-                                        console.log("New detection added to history");
-                                        updateDetectionHistory(detection);
+                                    if (data.detection_info && data.last_detection_image) {
+                                        updateOverlay(data);
+                                        
+                                        const detection = {
+                                            image: data.last_detection_image,
+                                            info: data.detection_info
+                                        };
+                                        
+                                        const lastDetection = detectionHistory[0];
+                                        if (!lastDetection || 
+                                            lastDetection.info.timestamp !== detection.info.timestamp) {
+                                            console.log("New detection added to history");
+                                            updateDetectionHistory(detection);
+                                        }
                                     }
                                 }
                             })
@@ -1031,7 +1033,7 @@ class VideoHost:
                             <div class="stats-overlay">
                                 <div class="stat-row">
                                     <span class="stat-label">Status:</span>
-                                    <span class="stat-value" id="statusText">Initializing...</span>
+                                    <span class="stat-value" id="processStatus">Initializing...</span>
                                 </div>
                             </div>
                             <div class="compass-container">
