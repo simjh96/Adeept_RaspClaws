@@ -263,9 +263,7 @@ def sequence_with_status():
             host.update_status("Starting detection sequence...")
             
             # Turn on red LED for detection mode
-            LED.LED_control(LED.LED_R, 100)  # Red LED for detection
-            LED.LED_control(LED.LED_G, 0)
-            LED.LED_control(LED.LED_B, 0)
+            LED.setRed()  # Red LED for detection
             
             # Reset motion detector for new detection sequence
             detector.reset_detection()
@@ -296,17 +294,13 @@ def sequence_with_status():
                     last_position = position
                     
                     # Turn on blue LED for movement
-                    LED.LED_control(LED.LED_R, 0)
-                    LED.LED_control(LED.LED_G, 0)
-                    LED.LED_control(LED.LED_B, 100)  # Blue LED for movement
+                    LED.setBlue()  # Blue LED for movement
                     
                     # Move towards object for 2 seconds
                     move_to_object(position)
                     
                     # Turn off LEDs
-                    LED.LED_control(LED.LED_R, 0)
-                    LED.LED_control(LED.LED_G, 0)
-                    LED.LED_control(LED.LED_B, 0)
+                    LED.turnOffRGB()
                     
                     # Wait before starting next detection
                     time.sleep(1)
@@ -320,9 +314,7 @@ def sequence_with_status():
         host.update_status(error_msg)
         # Turn off LEDs safely
         try:
-            LED.LED_control(LED.LED_R, 0)
-            LED.LED_control(LED.LED_G, 0)
-            LED.LED_control(LED.LED_B, 0)
+            LED.turnOffRGB()
         except:
             pass
         with servo_lock:
