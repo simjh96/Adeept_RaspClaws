@@ -224,6 +224,27 @@ class VideoHost:
                     .compass-e { right: 5px; top: 50%; transform: translateY(-50%); }
                     .compass-s { bottom: 5px; left: 50%; transform: translateX(-50%); }
                     .compass-w { left: 5px; top: 50%; transform: translateY(-50%); }
+                    .history-canvas-container {
+                        position: relative;
+                        width: 100%;
+                        margin-bottom: 10px;
+                    }
+                    .history-timestamp {
+                        font-size: 14px;
+                        color: #00ff00;
+                        margin-bottom: 5px;
+                    }
+                    .history-stat {
+                        font-size: 12px;
+                        color: #888;
+                        margin: 2px 0;
+                    }
+                    .history-item {
+                        background: #2a2a2a;
+                        padding: 15px;
+                        border-radius: 5px;
+                        margin-bottom: 15px;
+                    }
                 </style>
                 <script>
                     let detectionHistory = [];
@@ -343,15 +364,20 @@ class VideoHost:
                         
                         // Update history display
                         const container = document.querySelector('.history-grid');
+                        if (!container) return;
+                        
                         container.innerHTML = detectionHistory.map((item, index) => `
                             <div class="history-item">
-                                <canvas class="history-image" 
-                                        width="320" height="240" 
-                                        data-index="${index}"></canvas>
+                                <div class="history-timestamp">${new Date(item.timestamp).toLocaleTimeString()}</div>
+                                <div class="history-canvas-container">
+                                    <canvas class="history-image" 
+                                            width="320" height="240" 
+                                            data-index="${index}"></canvas>
+                                </div>
                                 <div class="history-info">
-                                    <div>${new Date(item.timestamp).toLocaleTimeString()}</div>
-                                    <div>Distance: ${item.info.position.distance.toFixed(2)} units</div>
-                                    <div>Angle: ${item.info.position.angle_x.toFixed(2)}°</div>
+                                    <div class="history-stat">Distance: ${item.info.position.distance.toFixed(2)} units</div>
+                                    <div class="history-stat">Angle X: ${item.info.position.angle_x.toFixed(2)}°</div>
+                                    <div class="history-stat">Angle Y: ${item.info.position.angle_y.toFixed(2)}°</div>
                                 </div>
                             </div>
                         `).join('');
@@ -363,7 +389,11 @@ class VideoHost:
                                 const ctx = canvas.getContext('2d');
                                 const img = new Image();
                                 img.onload = () => {
+                                    // Clear canvas
+                                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                                    // Draw image
                                     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                                    // Draw overlay
                                     drawDetectionOverlay(ctx, item.info, canvas.width, canvas.height);
                                 };
                                 img.src = 'data:image/jpeg;base64,' + item.image;
@@ -420,18 +450,25 @@ class VideoHost:
                                         };
                                         
                                         // Only add to history if it's a new detection
-                                        if (!detectionHistory.length || 
-                                            detectionHistory[0].info.timestamp !== detection.info.timestamp) {
+                                        const lastDetection = detectionHistory[0];
+                                        if (!lastDetection || 
+                                            lastDetection.info.timestamp !== detection.info.timestamp) {
+                                            console.log("New detection added to history");
                                             updateDetectionHistory(detection);
                                         }
                                     }
                                 } else {
                                     // Clear live overlay but keep scanning effect
                                     const canvas = document.getElementById('videoOverlay');
-                                    const ctx = canvas.getContext('2d');
-                                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                                    drawScanningEffect(ctx, canvas.width, canvas.height);
+                                    if (canvas) {
+                                        const ctx = canvas.getContext('2d');
+                                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                                        drawScanningEffect(ctx, canvas.width, canvas.height);
+                                    }
                                 }
+                            })
+                            .catch(error => {
+                                console.error('Error updating status:', error);
                             });
                     }
                     

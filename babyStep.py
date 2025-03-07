@@ -253,32 +253,40 @@ def sequence_with_status():
             
             time.sleep(2)
             
-            # Reset motion detector for new detection
-            detector.reset_detection()
-            
-            host.update_status("Starting motion detection...")
-            position = None
-            detection_count = 0
-            required_detections = 3
-            last_detection_time = None
-            
-            while detection_count < required_detections:
-                position = detector.detect_motion()
+            while True:  # Detection loop
+                host.update_status("Starting motion detection...")
+                # Reset motion detector for new detection sequence
+                detector.reset_detection()
+                
+                position = None
+                detection_count = 0
+                required_detections = 3
+                last_detection_time = None
+                
+                # Wait for background model to initialize
+                time.sleep(1)
+                
+                while detection_count < required_detections:
+                    position = detector.detect_motion()
+                    if position:
+                        current_time = time.time()
+                        if last_detection_time is None or current_time - last_detection_time > 1.0:
+                            detection_count += 1
+                            last_detection_time = current_time
+                            host.update_status(f"Motion detected ({detection_count}/{required_detections})")
+                            time.sleep(0.5)
+                    time.sleep(0.1)
+                
                 if position:
-                    current_time = time.time()
-                    if last_detection_time is None or current_time - last_detection_time > 1.0:
-                        detection_count += 1
-                        last_detection_time = current_time
-                        host.update_status(f"Motion detected ({detection_count}/{required_detections})")
-                        time.sleep(0.5)
-                time.sleep(0.1)
-            
-            host.update_status(f"Object detected at position: {position}")
-            move_to_object(position)
-            host.update_status("Movement to object completed. Standing by.")
-            
-            # Wait before starting next detection sequence
-            time.sleep(3)
+                    host.update_status(f"Object detected at position: {position}")
+                    move_to_object(position)
+                    host.update_status("Movement to object completed. Standing by.")
+                    
+                    # Wait before starting next detection
+                    time.sleep(3)
+                    break  # Break inner loop to restart movement sequence
+                
+                time.sleep(0.1)  # Small delay between detection attempts
             
     except Exception as e:
         error_msg = f"Error in main sequence: {e}"
