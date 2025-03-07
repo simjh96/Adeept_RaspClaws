@@ -30,7 +30,6 @@ class MotionDetector:
         self.object_position = None
         self.last_detection_image = None
         self.detection_info = None
-        self.is_moving = False  # Add flag to track movement state
         
     def reset_detection(self):
         """Reset the background model to start fresh detection."""
@@ -40,9 +39,6 @@ class MotionDetector:
         
     def detect_motion(self):
         """Detect motion and calculate object position relative to robot."""
-        if self.is_moving:  # Skip detection if robot is moving
-            return None
-            
         frame = self.camera.get_frame_safe()
         if frame is None:
             return None
@@ -64,24 +60,23 @@ class MotionDetector:
         # Initialize background model if needed
         if self.avg is None:
             self.avg = gray.copy().astype("float")
-            time.sleep(0.2)  # Reduced from 0.5s to 0.2s for faster initialization
             return None
 
-        # Accumulate weighted average with faster adaptation
-        cv2.accumulateWeighted(gray, self.avg, 0.3)  # Increased from 0.5 to 0.3 for faster updates
+        # Accumulate weighted average
+        cv2.accumulateWeighted(gray, self.avg, 0.5)
         frameDelta = cv2.absdiff(gray, cv2.convertScaleAbs(self.avg))
 
-        # Threshold and dilate with lower threshold for faster detection
-        thresh = cv2.threshold(frameDelta, 3, 255, cv2.THRESH_BINARY)[1]  # Reduced threshold from 5 to 3
+        # Threshold and dilate
+        thresh = cv2.threshold(frameDelta, 5, 255, cv2.THRESH_BINARY)[1]
         thresh = cv2.dilate(thresh, None, iterations=2)
 
         # Find contours
         contours = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
 
-        # Process largest contour with reduced area threshold
+        # Process largest contour
         if len(contours) > 0:
             largest_contour = max(contours, key=cv2.contourArea)
-            if cv2.contourArea(largest_contour) > 2000:  # Reduced from 5000 to 2000
+            if cv2.contourArea(largest_contour) > 5000:  # Min area threshold
                 (x, y, w, h) = cv2.boundingRect(largest_contour)
                 center_x = x + w//2
                 center_y = y + h//2
@@ -215,9 +210,6 @@ def move_to_object(position):
     if not position:
         return
         
-    # Set moving flag
-    detector.is_moving = True
-    
     # Calculate turn angle needed
     turn_angle = position['angle_x']
     distance = position['distance']
@@ -226,12 +218,12 @@ def move_to_object(position):
     movement_plan = {
         'turn': {
             'angle': turn_angle,
-            'direction': 'right' if turn_angle > 0 else 'left',
+            'direction': 'right' if turn_angle > 0 else 'left',  # Fix direction logic
             'steps': min(abs(int(turn_angle / 10)), 4)
         },
         'forward': {
             'distance': distance,
-            'duration': 2.0
+            'duration': 2.0  # 2 seconds of forward movement
         }
     }
     
@@ -258,18 +250,18 @@ def move_to_object(position):
         
         for step in range(steps):
             with servo_lock:
-                # Execute full step sequence atomically with reduced delays
+                # Execute full step sequence atomically
                 move.move(1, 35, direction)
-                time.sleep(0.02)
+                time.sleep(0.05)
                 move.move(2, 35, direction)
-                time.sleep(0.02)
+                time.sleep(0.05)
                 move.move(3, 35, direction)
-                time.sleep(0.02)
+                time.sleep(0.05)
                 move.move(4, 35, direction)
-                time.sleep(0.02)
+                time.sleep(0.05)
             
-            # Reduced delay between steps
-            time.sleep(0.05)
+            # Add delay between steps
+            time.sleep(0.1)
             
             # Update position and progress
             current_position['angle'] += (turn_angle/steps) * (1 if direction == 'left' else -1)
@@ -277,7 +269,7 @@ def move_to_object(position):
             movement_info['status'] = f"Turn progress: {step + 1}/{steps} steps ({((step + 1)/steps * 100):.0f}%)"
             host.update_movement_info(movement_info)
     
-    # Move forward
+    # Move forward for exactly 2 seconds
     start_time = time.time()
     step_count = 0
     
@@ -286,18 +278,18 @@ def move_to_object(position):
     
     while time.time() - start_time < 2:
         with servo_lock:
-            # Execute full step sequence atomically with reduced delays
+            # Execute full step sequence atomically
             move.move(1, 35, 'no')
-            time.sleep(0.02)
+            time.sleep(0.05)
             move.move(2, 35, 'no')
-            time.sleep(0.02)
+            time.sleep(0.05)
             move.move(3, 35, 'no')
-            time.sleep(0.02)
+            time.sleep(0.05)
             move.move(4, 35, 'no')
-            time.sleep(0.02)
+            time.sleep(0.05)
         
-        # Reduced delay between steps
-        time.sleep(0.05)
+        # Add delay between steps
+        time.sleep(0.1)
         
         step_count += 1
         progress = min((time.time() - start_time) / 2.0 * 100, 100)
@@ -318,15 +310,12 @@ def move_to_object(position):
         movement_info['status'] = "Movement complete. Standing by."
         movement_info['position'] = current_position
         host.update_movement_info(movement_info)
-    
-    # Reset moving flag
-    detector.is_moving = False
-    
-    # Clear detection history after movement
-    detector.last_detection_image = None
-    detector.detection_info = None
 
 def sequence_with_status():
+    # Initialize LED control
+    RL = RobotLight()
+    RL.start()
+    
     try:
         host.update_status("Initializing robot position...")
         initialize_robot()
@@ -336,12 +325,14 @@ def sequence_with_status():
         last_head_position = None
         head_movement_info = None
         
-        # Ensure LEDs are off at start
-        RL.both_off()
-        time.sleep(0.1)
-        
         while True:  # Main loop
             host.update_status("Starting detection sequence...")
+            
+            # Turn off all LEDs at start
+            RL.both_off()
+            
+            # Detection mode - Red LED
+            RL.red()
             
             # Reset motion detector for new detection sequence
             detector.reset_detection()
@@ -372,7 +363,7 @@ def sequence_with_status():
                 host.update_status("Moving head to last detected position...")
                 
                 with servo_lock:
-                    # Move head with progress updates and reduced delays
+                    # Move head with progress updates
                     if head_movement_info['delta']['x'] != 0:
                         direction = 'right' if head_movement_info['delta']['x'] > 0 else 'left'
                         steps = abs(head_movement_info['delta']['x'])
@@ -384,24 +375,13 @@ def sequence_with_status():
                         steps = abs(head_movement_info['delta']['y'])
                         host.update_status(f"Adjusting head {direction} by {steps} steps...")
                         safe_look(direction, steps)
-                    time.sleep(0.2)  # Reduced delay
+                    time.sleep(0.5)
             
-            # Reduced delay for background model initialization
-            time.sleep(0.5)
-            
-            # Start detection mode with red LED
-            RL.red()
-            host.update_status("Motion detection active - Scanning for movement...")
+            # Wait for background model to initialize
+            time.sleep(1)
             
             position = None
-            detection_start_time = time.time()
-            
-            while not position and not detector.is_moving:  # Only detect when not moving
-                # Blink red LED during detection
-                if time.time() - detection_start_time > 1.0:  # Blink every second
-                    RL.red()
-                    detection_start_time = time.time()
-                
+            while not position:  # Detection loop
                 position = detector.detect_motion()
                 if position:
                     host.update_status("Motion detected! Moving to target...")
@@ -409,26 +389,25 @@ def sequence_with_status():
                     # Store current head position before moving
                     with servo_lock:
                         last_head_position = {
-                            'x': move.Left_Right_input,
-                            'y': move.Up_Down_input
+                            'x': move.Left_Right_input,  # Using global variable instead of function
+                            'y': move.Up_Down_input      # Using global variable instead of function
                         }
                     last_position = position
                     
                     # Movement mode - Blue LED
                     RL.blue()
                     
-                    # Move towards object
+                    # Move towards object for 2 seconds
                     move_to_object(position)
                     
-                    # Return to detection mode
-                    RL.red()
-                    host.update_status("Movement complete - Resuming detection...")
+                    # Turn off LEDs after sequence
+                    RL.both_off()
                     
-                    # Short delay before next detection
-                    time.sleep(0.2)
-                    break
+                    # Wait before starting next detection
+                    time.sleep(1)
+                    break  # Break detection loop to start new sequence
                 
-                time.sleep(0.05)  # Reduced delay between detection attempts
+                time.sleep(0.1)  # Small delay between detection attempts
             
     except Exception as e:
         error_msg = f"Error in main sequence: {e}"
@@ -438,7 +417,6 @@ def sequence_with_status():
         with servo_lock:
             move.clean_all()
     finally:
-        RL.both_off()  # Ensure LEDs are off when exiting
         RL.pause()  # Clean up LED thread
 
 if __name__ == '__main__':
@@ -446,22 +424,14 @@ if __name__ == '__main__':
         # Start video host (singleton ensures only one instance)
         host = VideoHost(port=5000, debug=True)
         
-        # Initialize LED control first
-        RL = RobotLight()
-        RL.start()
-        RL.both_off()  # Start with LEDs off
-        
         # Initialize camera first
-        host.update_status("Initializing camera...")
         if not host.init_camera():
             print("Failed to initialize camera. Exiting...")
-            RL.both_off()
             sys.exit(1)
             
         print("Camera initialized successfully")
         
         # Initialize motion detector with the camera instance
-        host.update_status("Initializing motion detector...")
         detector = MotionDetector(host)
         
         # Set detector in video host for status updates
@@ -472,16 +442,12 @@ if __name__ == '__main__':
         print("Video host started on port 5000")
         
         # Update status
-        host.update_status("Server initialized, starting main sequence...")
+        host.update_status("Server initialized, waiting to start main sequence...")
         
         # Start main sequence in a separate thread
         main_thread = threading.Thread(target=sequence_with_status)
         main_thread.daemon = True
         main_thread.start()
-
-        # Indicate system is ready with green LED
-        RL.green()
-        host.update_status("System ready - Motion detection active")
         
         # Keep the main thread running
         while True:
@@ -492,12 +458,9 @@ if __name__ == '__main__':
         host.update_status("Shutting down...")
         with servo_lock:
             move.clean_all()
-        RL.both_off()
         host.cleanup()
     except Exception as e:
         print(f"\nError during startup: {e}")
-        if 'RL' in locals():
-            RL.both_off()
         if 'host' in locals():
             host.cleanup()
         sys.exit(1) 
