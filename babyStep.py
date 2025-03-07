@@ -81,7 +81,7 @@ class MotionDetector:
         frameDelta = cv2.absdiff(gray, cv2.convertScaleAbs(self.avg))
 
         # Threshold and dilate
-        thresh = cv2.threshold(frameDelta, 5, 255, cv2.THRESH_BINARY)[1]  # Increased threshold for more stable detection
+        thresh = cv2.threshold(frameDelta, 3, 255, cv2.THRESH_BINARY)[1]
         thresh = cv2.dilate(thresh, None, iterations=2)
 
         # Find contours
@@ -90,69 +90,60 @@ class MotionDetector:
         # Process largest contour
         if len(contours) > 0:
             largest_contour = max(contours, key=cv2.contourArea)
-            area = cv2.contourArea(largest_contour)
-            
-            # Only process if area is significant (increased threshold)
-            if area > 2500:  # Increased minimum area
+            if cv2.contourArea(largest_contour) > 1500:  # Reduced area threshold
                 (x, y, w, h) = cv2.boundingRect(largest_contour)
+                center_x = x + w//2
+                center_y = y + h//2
                 
-                # Calculate movement magnitude
-                movement_magnitude = w * h
+                # Draw rectangle and center point on the display image
+                cv2.rectangle(display_img, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                cv2.circle(display_img, (center_x, center_y), 5, (0, 0, 255), -1)
                 
-                # Only trigger if movement is significant
-                if movement_magnitude > 10000:  # Added minimum movement threshold
-                    center_x = x + w//2
-                    center_y = y + h//2
-                    
-                    # Draw rectangle and center point
-                    cv2.rectangle(display_img, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                    cv2.circle(display_img, (center_x, center_y), 5, (0, 0, 255), -1)
-                    
-                    # Calculate relative position from center
-                    frame_center_x = display_img.shape[1] // 2
-                    frame_center_y = display_img.shape[0] // 2
-                    
-                    # Draw vector from center to object
-                    cv2.line(display_img, 
-                            (frame_center_x, frame_center_y),
-                            (center_x, center_y),
-                            (0, 255, 0), 2)
-                    
-                    # Calculate angles (assuming 60° FOV)
-                    angle_x = ((center_x - frame_center_x) / frame_center_x) * 30
-                    angle_y = ((center_y - frame_center_y) / frame_center_y) * 30
-                    
-                    # Get current head position
-                    head_x = 300  # Default center position
-                    head_y = 300  # Default center position
-                    
-                    # Calculate total angles including head position
-                    total_angle_x = angle_x + (head_x - 300) / 10
-                    total_angle_y = angle_y + (head_y - 300) / 10
-                    
-                    # Estimate distance based on object size
-                    distance = 1000 / math.sqrt(w * h)
-                    
-                    self.object_position = {
-                        'angle_x': total_angle_x,
-                        'angle_y': total_angle_y,
-                        'distance': distance
-                    }
-                    
-                    # Save detection information
-                    _, buffer = cv2.imencode('.jpg', display_img)
-                    self.last_detection_image = base64.b64encode(buffer).decode('utf-8')
-                    self.detection_info = {
-                        'timestamp': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                        'position': self.object_position,
-                        'object_size': {'width': w, 'height': h},
-                        'center': {'x': center_x, 'y': center_y},
-                        'frame_center': {'x': frame_center_x, 'y': frame_center_y}
-                    }
-                    
-                    self.motion_detected = True
-                    return self.object_position
-                    
+                # Calculate relative position from center of frame
+                frame_center_x = display_img.shape[1] // 2
+                frame_center_y = display_img.shape[0] // 2
+                
+                # Draw vector from center to object
+                cv2.line(display_img, 
+                        (frame_center_x, frame_center_y),
+                        (center_x, center_y),
+                        (0, 255, 0), 2)
+                
+                # Calculate angles (assuming 60° FOV for the camera)
+                angle_x = ((center_x - frame_center_x) / frame_center_x) * 30
+                angle_y = ((center_y - frame_center_y) / frame_center_y) * 30
+                
+                # Get current head position
+                head_x = 300  # Default center position
+                head_y = 300  # Default center position
+                
+                # Calculate total angles including head position
+                total_angle_x = angle_x + (head_x - 300) / 10
+                total_angle_y = angle_y + (head_y - 300) / 10
+                
+                # Estimate distance based on object size
+                distance = 1000 / math.sqrt(w * h)
+                
+                self.object_position = {
+                    'angle_x': total_angle_x,
+                    'angle_y': total_angle_y,
+                    'distance': distance
+                }
+                
+                # Save detection information with base64 encoded image
+                _, buffer = cv2.imencode('.jpg', display_img)
+                self.last_detection_image = base64.b64encode(buffer).decode('utf-8')
+                self.detection_info = {
+                    'timestamp': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'position': self.object_position,
+                    'object_size': {'width': w, 'height': h},
+                    'center': {'x': center_x, 'y': center_y},
+                    'frame_center': {'x': frame_center_x, 'y': frame_center_y}
+                }
+                
+                self.motion_detected = True
+                return self.object_position
+                
         return None
 
 def safe_move(step, speed, direction):
@@ -355,103 +346,93 @@ def sequence_with_status():
         
         # Start with LEDs off
         RL.both_off()
-        time.sleep(0.1)  # Small delay to ensure LED state
         
         while True:  # Main loop
-            try:
-                # Start new detection cycle with LED
-                RL.red()  # Turn on red LED for scanning
-                host.update_status("Starting detection sequence...")
+            # Start new detection cycle with LED
+            RL.red()  # LED on for scanning
+            host.update_status("Starting detection sequence...")
+            
+            # Reset motion detector for new detection sequence
+            detector.reset_detection()
+            
+            if last_position and last_head_position:
+                host.update_status("Calculating head movement to last position...")
                 
-                # Reset motion detector for new detection sequence
-                detector.reset_detection()
+                # Calculate head movement
+                head_movement_info = {
+                    'timestamp': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'from': {
+                        'x': move.Left_Right_input,
+                        'y': move.Up_Down_input
+                    },
+                    'to': last_head_position,
+                    'delta': {
+                        'x': last_head_position['x'] - move.Left_Right_input,
+                        'y': last_head_position['y'] - move.Up_Down_input
+                    },
+                    'status': 'Calculating head movement...',
+                    'x': move.Left_Right_input,
+                    'y': move.Up_Down_input,
+                    'target': last_head_position
+                }
                 
-                if last_position and last_head_position:
-                    host.update_status("Calculating head movement to last position...")
+                host.update_head_movement(head_movement_info)
+                host.update_status("Moving head to last detected position...")
+                
+                with servo_lock:
+                    # Move head with progress updates and reduced delays
+                    if head_movement_info['delta']['x'] != 0:
+                        direction = 'right' if head_movement_info['delta']['x'] > 0 else 'left'
+                        steps = abs(head_movement_info['delta']['x'])
+                        host.update_status(f"Adjusting head {direction} by {steps} steps...")
+                        safe_look(direction, steps)
                     
-                    # Calculate head movement
-                    head_movement_info = {
-                        'timestamp': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                        'from': {
+                    if head_movement_info['delta']['y'] != 0:
+                        direction = 'up' if head_movement_info['delta']['y'] > 0 else 'down'
+                        steps = abs(head_movement_info['delta']['y'])
+                        host.update_status(f"Adjusting head {direction} by {steps} steps...")
+                        safe_look(direction, steps)
+                    time.sleep(0.2)  # Reduced delay
+            
+            # Minimal delay for background model
+            time.sleep(0.1)
+            
+            position = None
+            scan_start_time = time.time()
+            
+            while not position and not detector.is_moving:
+                position = detector.detect_motion()
+                
+                # Update status periodically
+                if time.time() - scan_start_time > 1.0:
+                    host.update_status("Scanning for movement...")
+                    scan_start_time = time.time()
+                
+                if position:
+                    host.update_status("Motion detected! Moving to target...")
+                    
+                    # Store current head position
+                    with servo_lock:
+                        last_head_position = {
                             'x': move.Left_Right_input,
                             'y': move.Up_Down_input
-                        },
-                        'to': last_head_position,
-                        'delta': {
-                            'x': last_head_position['x'] - move.Left_Right_input,
-                            'y': last_head_position['y'] - move.Up_Down_input
-                        },
-                        'status': 'Calculating head movement...',
-                        'x': move.Left_Right_input,
-                        'y': move.Up_Down_input,
-                        'target': last_head_position
-                    }
+                        }
+                    last_position = position
                     
-                    host.update_head_movement(head_movement_info)
-                    host.update_status("Moving head to last detected position...")
+                    # Turn off LED during movement
+                    RL.both_off()
                     
-                    with servo_lock:
-                        # Move head with progress updates and reduced delays
-                        if head_movement_info['delta']['x'] != 0:
-                            direction = 'right' if head_movement_info['delta']['x'] > 0 else 'left'
-                            steps = abs(head_movement_info['delta']['x'])
-                            host.update_status(f"Adjusting head {direction} by {steps} steps...")
-                            safe_look(direction, steps)
-                        
-                        if head_movement_info['delta']['y'] != 0:
-                            direction = 'up' if head_movement_info['delta']['y'] > 0 else 'down'
-                            steps = abs(head_movement_info['delta']['y'])
-                            host.update_status(f"Adjusting head {direction} by {steps} steps...")
-                            safe_look(direction, steps)
-                        time.sleep(0.2)  # Reduced delay
-                
-                # Minimal delay for background model
-                time.sleep(0.1)
-                
-                position = None
-                scan_start_time = time.time()
-                
-                while not position and not detector.is_moving:
-                    position = detector.detect_motion()
+                    # Move towards object
+                    move_to_object(position)
                     
-                    # Update status periodically
-                    if time.time() - scan_start_time > 1.0:
-                        host.update_status("Scanning for movement...")
-                        scan_start_time = time.time()
-                    
-                    if position:
-                        host.update_status("Motion detected! Moving to target...")
-                        
-                        # Store current head position
-                        with servo_lock:
-                            last_head_position = {
-                                'x': move.Left_Right_input,
-                                'y': move.Up_Down_input
-                            }
-                        last_position = position
-                        
-                        # Turn off LED during movement
-                        RL.both_off()
-                        time.sleep(0.1)  # Ensure LED state change
-                        
-                        # Move towards object
-                        move_to_object(position)
-                        
-                        host.update_status("Movement complete - Starting new scan...")
-                        time.sleep(0.1)  # Brief pause before next scan
-                        break
-                    
-                    time.sleep(0.01)  # Minimal delay between scans
+                    host.update_status("Movement complete - Starting new scan...")
+                    time.sleep(0.1)  # Brief pause before next scan
+                    break
                 
-                # Ensure LED is off between detection cycles
-                RL.both_off()
-                time.sleep(0.1)  # Ensure LED state change
-                
-            except Exception as e:
-                print(f"Error in detection cycle: {e}")
-                RL.both_off()  # Ensure LEDs are off on error
-                time.sleep(0.1)
-                continue
+                time.sleep(0.01)  # Minimal delay between scans
+            
+            # Ensure LED is off between detection cycles
+            RL.both_off()
             
     except Exception as e:
         error_msg = f"Error in main sequence: {e}"
@@ -469,11 +450,10 @@ if __name__ == '__main__':
         # Start video host (singleton ensures only one instance)
         host = VideoHost(port=5000, debug=True)
         
-        # Initialize LED control first with proper setup
+        # Initialize LED control first
         RL = RobotLight()
         RL.start()
-        time.sleep(0.5)  # Wait for LED initialization
-        RL.both_off()  # Ensure LEDs start off
+        RL.both_off()  # Start with LEDs off
         
         # Initialize camera first
         host.update_status("Initializing camera...")
@@ -505,7 +485,6 @@ if __name__ == '__main__':
 
         # Indicate system is ready with green LED
         RL.green()
-        time.sleep(0.2)  # Ensure LED state change
         host.update_status("System ready - Motion detection active")
         
         # Keep the main thread running
@@ -518,13 +497,11 @@ if __name__ == '__main__':
         with servo_lock:
             move.clean_all()
         RL.both_off()
-        time.sleep(0.1)  # Ensure LED state change
         host.cleanup()
     except Exception as e:
         print(f"\nError during startup: {e}")
         if 'RL' in locals():
             RL.both_off()
-            time.sleep(0.1)  # Ensure LED state change
         if 'host' in locals():
             host.cleanup()
         sys.exit(1) 
