@@ -240,10 +240,22 @@ def main_sequence():
         
         print("Starting motion detection...")
         position = None
-        while not position:
+        detection_count = 0
+        required_detections = 3  # Number of detections needed before moving
+        last_detection_time = None
+        
+        while detection_count < required_detections:
             position = detector.detect_motion()
+            if position:
+                current_time = time.time()
+                if last_detection_time is None or current_time - last_detection_time > 1.0:
+                    detection_count += 1
+                    last_detection_time = current_time
+                    print(f"Motion detected ({detection_count}/{required_detections})")
+                    time.sleep(0.5)  # Wait to capture next detection
             time.sleep(0.1)
         
+        # Use the last detected position
         print(f"Object detected at: {position}")
         move_to_object(position)
         print("Movement to object completed.")
@@ -285,10 +297,22 @@ if __name__ == '__main__':
                 
                 host.update_status("Starting motion detection...")
                 position = None
-                while not position:
+                detection_count = 0
+                required_detections = 3  # Number of detections needed before moving
+                last_detection_time = None
+                
+                while detection_count < required_detections:
                     position = detector.detect_motion()
+                    if position:
+                        current_time = time.time()
+                        if last_detection_time is None or current_time - last_detection_time > 1.0:
+                            detection_count += 1
+                            last_detection_time = current_time
+                            host.update_status(f"Motion detected ({detection_count}/{required_detections})")
+                            time.sleep(0.5)  # Wait to capture next detection
                     time.sleep(0.1)
                 
+                # Use the last detected position
                 host.update_status(f"Object detected at position: {position}")
                 move_to_object(position)
                 host.update_status("Movement to object completed. Standing by.")
