@@ -8,7 +8,7 @@ import datetime
 import cv2
 import numpy as np
 import base64  # Add base64 import
-from rpi_ws281x import *  # Add this import for Color
+# from rpi_ws281x import *  # LED control import
 
 # Add server directory to Python path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'server'))
@@ -23,7 +23,7 @@ from robotLight import RobotLight  # Direct import since server is in Python pat
 servo_lock = threading.Lock()
 
 # Initialize LED control globally
-led = LED.LED()  # Use LED class directly like webServer.py does
+# led = LED.LED()  # LED control disabled
 
 class MotionDetector:
     def __init__(self, camera):
@@ -357,27 +357,16 @@ def sequence_with_status():
         last_head_position = None
         head_movement_info = None
         
-        print("[LED DEBUG] Attempting to turn off LEDs at start...")
-        try:
-            led.colorWipe(Color(0, 0, 0))  # Turn off LEDs using colorWipe
-            print("[LED DEBUG] Successfully turned off LEDs")
-        except Exception as e:
-            print(f"[LED DEBUG] Error turning off LEDs: {e}")
+        # Turn off LEDs at start
+        # led.colorWipe(Color(0, 0, 0))
         time.sleep(0.1)
         
         while True:  # Main loop
             try:
-                # Start new detection cycle with LED
-                print("[LED DEBUG] Attempting to turn on RED LED for scanning...")
-                try:
-                    led.colorWipe(Color(255, 0, 0))  # Red color
-                    print("[LED DEBUG] Successfully turned on RED LED")
-                except Exception as e:
-                    print(f"[LED DEBUG] Error turning on RED LED: {e}")
+                # Start new detection cycle
+                # led.colorWipe(Color(255, 0, 0))  # Red for scanning
                 
                 host.update_status("Starting detection sequence...")
-                
-                # Reset motion detector for new detection sequence
                 detector.reset_detection()
                 
                 if last_position and last_head_position:
@@ -405,7 +394,6 @@ def sequence_with_status():
                     host.update_status("Moving head to last detected position...")
                     
                     with servo_lock:
-                        # Move head with progress updates and reduced delays
                         if head_movement_info['delta']['x'] != 0:
                             direction = 'right' if head_movement_info['delta']['x'] > 0 else 'left'
                             steps = abs(head_movement_info['delta']['x'])
@@ -417,9 +405,8 @@ def sequence_with_status():
                             steps = abs(head_movement_info['delta']['y'])
                             host.update_status(f"Adjusting head {direction} by {steps} steps...")
                             safe_look(direction, steps)
-                        time.sleep(0.2)  # Reduced delay
+                        time.sleep(0.2)
                 
-                # Minimal delay for background model
                 time.sleep(0.1)
                 
                 position = None
@@ -428,17 +415,13 @@ def sequence_with_status():
                 while not position and not detector.is_moving:
                     position = detector.detect_motion()
                     
-                    # Update status periodically
                     if time.time() - scan_start_time > 1.0:
                         host.update_status("Scanning for movement...")
                         scan_start_time = time.time()
-                        # Verify LED state periodically
-                        print("[LED DEBUG] Verifying RED LED state during scan...")
                     
                     if position:
                         host.update_status("Motion detected! Moving to target...")
                         
-                        # Store current head position
                         with servo_lock:
                             last_head_position = {
                                 'x': move.Left_Right_input,
@@ -447,15 +430,9 @@ def sequence_with_status():
                         last_position = position
                         
                         # Turn off LED during movement
-                        print("[LED DEBUG] Motion detected - Turning off LEDs...")
-                        try:
-                            led.colorWipe(Color(0, 0, 0))  # Turn off LEDs
-                            print("[LED DEBUG] Successfully turned off LEDs for movement")
-                        except Exception as e:
-                            print(f"[LED DEBUG] Error turning off LEDs for movement: {e}")
+                        # led.colorWipe(Color(0, 0, 0))
                         time.sleep(0.1)
                         
-                        # Move towards object
                         move_to_object(position)
                         
                         host.update_status("Movement complete - Starting new scan...")
@@ -464,22 +441,13 @@ def sequence_with_status():
                     
                     time.sleep(0.01)
                 
-                # Ensure LED is off between detection cycles
-                print("[LED DEBUG] Turning off LEDs between cycles...")
-                try:
-                    led.colorWipe(Color(0, 0, 0))  # Turn off LEDs
-                    print("[LED DEBUG] Successfully turned off LEDs between cycles")
-                except Exception as e:
-                    print(f"[LED DEBUG] Error turning off LEDs between cycles: {e}")
+                # Turn off LED between cycles
+                # led.colorWipe(Color(0, 0, 0))
                 time.sleep(0.1)
                 
             except Exception as e:
-                print(f"[LED DEBUG] Error in detection cycle: {e}")
-                try:
-                    led.colorWipe(Color(0, 0, 0))  # Turn off LEDs
-                    print("[LED DEBUG] Successfully turned off LEDs after error")
-                except Exception as led_error:
-                    print(f"[LED DEBUG] Error turning off LEDs after error: {led_error}")
+                print(f"Error in detection cycle: {e}")
+                # led.colorWipe(Color(0, 0, 0))
                 time.sleep(0.1)
                 continue
             
@@ -487,64 +455,20 @@ def sequence_with_status():
         error_msg = f"Error in main sequence: {e}"
         print(error_msg)
         host.update_status(error_msg)
-        print("[LED DEBUG] Turning off LEDs after main sequence error...")
-        try:
-            led.colorWipe(Color(0, 0, 0))  # Turn off LEDs
-            print("[LED DEBUG] Successfully turned off LEDs after main sequence error")
-        except Exception as led_error:
-            print(f"[LED DEBUG] Error turning off LEDs after main sequence error: {led_error}")
-        time.sleep(0.1)
+        # led.colorWipe(Color(0, 0, 0))
         with servo_lock:
             move.clean_all()
-    finally:
-        print("[LED DEBUG] Turning off LEDs after main sequence...")
-        try:
-            led.colorWipe(Color(0, 0, 0))  # Turn off LEDs
-            print("[LED DEBUG] Successfully turned off LEDs after main sequence")
-        except Exception as e:
-            print(f"[LED DEBUG] Error turning off LEDs after main sequence: {e}")
-        time.sleep(0.1)
-        led.pause()
 
 if __name__ == '__main__':
     try:
-        print("[LED DEBUG] Starting initialization sequence...")
-        
-        # Check if running as root
-        if os.geteuid() != 0:
-            print("[LED DEBUG] WARNING: Not running as root. LED control may fail.")
-            print("[LED DEBUG] Try running with 'sudo python3 babyStep.py'")
-        
         # Start video host (singleton ensures only one instance)
         host = VideoHost(port=5000, debug=True)
-        
-        # Test LED functionality
-        print("[LED DEBUG] Testing LED control...")
-        try:
-            led.colorWipe(Color(0, 0, 0))    # Off
-            time.sleep(0.2)
-            led.colorWipe(Color(255, 0, 0))  # Red
-            time.sleep(0.2)
-            led.colorWipe(Color(0, 255, 0))  # Green
-            time.sleep(0.2)
-            led.colorWipe(Color(0, 0, 255))  # Blue
-            time.sleep(0.2)
-            led.colorWipe(Color(0, 0, 0))    # Off
-            print("[LED DEBUG] LED test complete")
-        except Exception as e:
-            print(f"[LED DEBUG] Error during LED test: {e}")
-            print("[LED DEBUG] Make sure you have permissions to access GPIO")
-            print("[LED DEBUG] Try: sudo pip3 install rpi_ws281x")
         
         # Initialize camera first
         host.update_status("Initializing camera...")
         if not host.init_camera():
-            print("[LED DEBUG] Camera initialization failed, turning off LEDs...")
-            try:
-                led.colorWipe(Color(0, 0, 0))  # Turn off LEDs
-                print("[LED DEBUG] Successfully turned off LEDs after camera init failure")
-            except Exception as e:
-                print(f"[LED DEBUG] Error turning off LEDs after camera init failure: {e}")
+            print("Failed to initialize camera. Exiting...")
+            # led.colorWipe(Color(0, 0, 0))
             sys.exit(1)
             
         print("Camera initialized successfully")
@@ -568,47 +492,29 @@ if __name__ == '__main__':
         main_thread.daemon = True
         main_thread.start()
 
-        # Indicate system is ready with green LED
-        print("[LED DEBUG] Setting GREEN LED for ready state...")
-        try:
-            led.colorWipe(Color(0, 255, 0))  # Green color
-            print("[LED DEBUG] Successfully set GREEN LED")
-        except Exception as e:
-            print(f"[LED DEBUG] Error setting GREEN LED: {e}")
+        # System ready indicator
+        # led.colorWipe(Color(0, 255, 0))  # Green for ready
         time.sleep(0.2)
         
         host.update_status("System ready - Motion detection active")
         
         # Keep the main thread running
-        print("[LED DEBUG] Entering main loop...")
         while True:
             time.sleep(1)
-            try:
-                # Maintain green LED in main state
-                led.colorWipe(Color(0, 255, 0))  # Keep green LED on
-            except Exception as e:
-                print(f"[LED DEBUG] Error maintaining LED state: {e}")
+            # Maintain ready state
+            # led.colorWipe(Color(0, 255, 0))
             
     except KeyboardInterrupt:
         print("\nShutting down...")
         host.update_status("Shutting down...")
         with servo_lock:
             move.clean_all()
-        print("[LED DEBUG] Turning off LEDs during shutdown...")
-        try:
-            led.colorWipe(Color(0, 0, 0))  # Turn off LEDs
-            print("[LED DEBUG] Successfully turned off LEDs during shutdown")
-        except Exception as e:
-            print(f"[LED DEBUG] Error turning off LEDs during shutdown: {e}")
+        # led.colorWipe(Color(0, 0, 0))
         time.sleep(0.1)
         host.cleanup()
     except Exception as e:
         print(f"\nError during startup: {e}")
-        try:
-            led.colorWipe(Color(0, 0, 0))  # Turn off LEDs
-            print("[LED DEBUG] Successfully turned off LEDs after startup error")
-        except Exception as led_error:
-            print(f"[LED DEBUG] Error turning off LEDs after startup error: {led_error}")
+        # led.colorWipe(Color(0, 0, 0))
         if 'host' in locals():
             host.cleanup()
         sys.exit(1) 
