@@ -30,6 +30,7 @@ class MotionDetector:
         self.object_position = None
         self.last_detection_image = None
         self.detection_info = None
+        self.is_moving = False  # Add flag to track movement state
         
     def reset_detection(self):
         """Reset the background model to start fresh detection."""
@@ -39,6 +40,9 @@ class MotionDetector:
         
     def detect_motion(self):
         """Detect motion and calculate object position relative to robot."""
+        if self.is_moving:  # Skip detection if robot is moving
+            return None
+            
         frame = self.camera.get_frame_safe()
         if frame is None:
             return None
@@ -210,6 +214,9 @@ def move_to_object(position):
     if not position:
         return
         
+    # Set moving flag
+    detector.is_moving = True
+    
     # Calculate turn angle needed
     turn_angle = position['angle_x']
     distance = position['distance']
@@ -218,12 +225,12 @@ def move_to_object(position):
     movement_plan = {
         'turn': {
             'angle': turn_angle,
-            'direction': 'right' if turn_angle > 0 else 'left',  # Fix direction logic
+            'direction': 'right' if turn_angle > 0 else 'left',
             'steps': min(abs(int(turn_angle / 10)), 4)
         },
         'forward': {
             'distance': distance,
-            'duration': 2.0  # 2 seconds of forward movement
+            'duration': 2.0
         }
     }
     
@@ -250,18 +257,18 @@ def move_to_object(position):
         
         for step in range(steps):
             with servo_lock:
-                # Execute full step sequence atomically
+                # Execute full step sequence atomically with reduced delays
                 move.move(1, 35, direction)
-                time.sleep(0.05)
+                time.sleep(0.02)
                 move.move(2, 35, direction)
-                time.sleep(0.05)
+                time.sleep(0.02)
                 move.move(3, 35, direction)
-                time.sleep(0.05)
+                time.sleep(0.02)
                 move.move(4, 35, direction)
-                time.sleep(0.05)
+                time.sleep(0.02)
             
-            # Add delay between steps
-            time.sleep(0.1)
+            # Reduced delay between steps
+            time.sleep(0.05)
             
             # Update position and progress
             current_position['angle'] += (turn_angle/steps) * (1 if direction == 'left' else -1)
@@ -269,7 +276,7 @@ def move_to_object(position):
             movement_info['status'] = f"Turn progress: {step + 1}/{steps} steps ({((step + 1)/steps * 100):.0f}%)"
             host.update_movement_info(movement_info)
     
-    # Move forward for exactly 2 seconds
+    # Move forward
     start_time = time.time()
     step_count = 0
     
@@ -278,18 +285,18 @@ def move_to_object(position):
     
     while time.time() - start_time < 2:
         with servo_lock:
-            # Execute full step sequence atomically
+            # Execute full step sequence atomically with reduced delays
             move.move(1, 35, 'no')
-            time.sleep(0.05)
+            time.sleep(0.02)
             move.move(2, 35, 'no')
-            time.sleep(0.05)
+            time.sleep(0.02)
             move.move(3, 35, 'no')
-            time.sleep(0.05)
+            time.sleep(0.02)
             move.move(4, 35, 'no')
-            time.sleep(0.05)
+            time.sleep(0.02)
         
-        # Add delay between steps
-        time.sleep(0.1)
+        # Reduced delay between steps
+        time.sleep(0.05)
         
         step_count += 1
         progress = min((time.time() - start_time) / 2.0 * 100, 100)
@@ -310,6 +317,13 @@ def move_to_object(position):
         movement_info['status'] = "Movement complete. Standing by."
         movement_info['position'] = current_position
         host.update_movement_info(movement_info)
+    
+    # Reset moving flag
+    detector.is_moving = False
+    
+    # Clear detection history after movement
+    detector.last_detection_image = None
+    detector.detection_info = None
 
 def sequence_with_status():
     # Initialize LED control
@@ -363,7 +377,7 @@ def sequence_with_status():
                 host.update_status("Moving head to last detected position...")
                 
                 with servo_lock:
-                    # Move head with progress updates
+                    # Move head with progress updates and reduced delays
                     if head_movement_info['delta']['x'] != 0:
                         direction = 'right' if head_movement_info['delta']['x'] > 0 else 'left'
                         steps = abs(head_movement_info['delta']['x'])
@@ -375,13 +389,13 @@ def sequence_with_status():
                         steps = abs(head_movement_info['delta']['y'])
                         host.update_status(f"Adjusting head {direction} by {steps} steps...")
                         safe_look(direction, steps)
-                    time.sleep(0.5)
+                    time.sleep(0.2)  # Reduced delay
             
-            # Wait for background model to initialize
-            time.sleep(1)
+            # Reduced delay for background model initialization
+            time.sleep(0.5)
             
             position = None
-            while not position:  # Detection loop
+            while not position and not detector.is_moving:  # Only detect when not moving
                 position = detector.detect_motion()
                 if position:
                     host.update_status("Motion detected! Moving to target...")
@@ -389,25 +403,25 @@ def sequence_with_status():
                     # Store current head position before moving
                     with servo_lock:
                         last_head_position = {
-                            'x': move.Left_Right_input,  # Using global variable instead of function
-                            'y': move.Up_Down_input      # Using global variable instead of function
+                            'x': move.Left_Right_input,
+                            'y': move.Up_Down_input
                         }
                     last_position = position
                     
                     # Movement mode - Blue LED
                     RL.blue()
                     
-                    # Move towards object for 2 seconds
+                    # Move towards object
                     move_to_object(position)
                     
                     # Turn off LEDs after sequence
                     RL.both_off()
                     
-                    # Wait before starting next detection
-                    time.sleep(1)
-                    break  # Break detection loop to start new sequence
+                    # Reduced delay before next detection
+                    time.sleep(0.5)
+                    break
                 
-                time.sleep(0.1)  # Small delay between detection attempts
+                time.sleep(0.05)  # Reduced delay between detection attempts
             
     except Exception as e:
         error_msg = f"Error in main sequence: {e}"
