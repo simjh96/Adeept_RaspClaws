@@ -249,6 +249,40 @@ class VideoHost:
                         border-radius: 5px;
                         margin-bottom: 15px;
                     }
+                    .map-section {
+                        background: #2a2a2a;
+                        padding: 15px;
+                        border-radius: 5px;
+                        margin-bottom: 15px;
+                    }
+                    #mapCanvas {
+                        width: 100%;
+                        height: 300px;
+                        background: #1a1a1a;
+                        border-radius: 3px;
+                    }
+                    .status-box {
+                        background: #2a2a2a;
+                        padding: 15px;
+                        border-radius: 5px;
+                        margin-bottom: 15px;
+                        font-family: monospace;
+                        white-space: pre-wrap;
+                        max-height: 200px;
+                        overflow-y: auto;
+                    }
+                    .movement-log {
+                        color: #00ff00;
+                        margin: 5px 0;
+                    }
+                    .head-movement-log {
+                        color: #00ffff;
+                        margin: 5px 0;
+                    }
+                    .progress-log {
+                        color: #ffff00;
+                        margin: 5px 0;
+                    }
                 </style>
                 <script>
                     let detectionHistory = [];
@@ -458,10 +492,31 @@ class VideoHost:
                         fetch('/status')
                             .then(response => response.json())
                             .then(data => {
-                                document.getElementById('processStatus').innerText = data.status;
+                                const statusBox = document.getElementById('processStatus');
+                                let statusText = `Status: ${data.status}\n`;
+                                
+                                if (data.movement_info) {
+                                    statusText += '\nMovement Info:\n';
+                                    statusText += `${data.movement_info.status}\n`;
+                                    if (data.movement_info.progress) {
+                                        statusText += `Progress: ${data.movement_info.progress}%\n`;
+                                    }
+                                    if (data.movement_info.details) {
+                                        statusText += `Details: ${data.movement_info.details}\n`;
+                                    }
+                                }
+                                
+                                if (data.head_movement_info) {
+                                    statusText += '\nHead Movement:\n';
+                                    statusText += `Position: X=${data.head_movement_info.x}, Y=${data.head_movement_info.y}\n`;
+                                    if (data.head_movement_info.target) {
+                                        statusText += `Target: X=${data.head_movement_info.target.x}, Y=${data.head_movement_info.target.y}\n`;
+                                    }
+                                }
+                                
+                                statusBox.innerText = statusText;
                                 
                                 if (data.detection_info && data.last_detection_image) {
-                                    // Update live overlay
                                     updateOverlay(data);
                                     
                                     const detection = {
@@ -469,13 +524,19 @@ class VideoHost:
                                         info: data.detection_info
                                     };
                                     
-                                    // Only add to history if it's a new detection
                                     const lastDetection = detectionHistory[0];
                                     if (!lastDetection || 
                                         lastDetection.info.timestamp !== detection.info.timestamp) {
                                         console.log("New detection added to history");
                                         updateDetectionHistory(detection);
                                     }
+                                }
+                                
+                                // Update map with movement info
+                                if (data.movement_info && data.movement_info.position) {
+                                    robotPosition = data.movement_info.position;
+                                    pathHistory.push({...robotPosition});
+                                    updateMap(data);
                                 }
                             })
                             .catch(error => {
@@ -740,6 +801,9 @@ class VideoHost:
                     
                     <div class="detection-section">
                         <div id="processStatus" class="status-box">Initializing...</div>
+                        <div class="map-section">
+                            <canvas id="mapCanvas"></canvas>
+                        </div>
                         <div class="history-section">
                             <div class="history-title">Detection History</div>
                             <div class="history-grid">
@@ -817,12 +881,37 @@ class VideoHost:
 
     def update_movement_info(self, info):
         """Update current movement information."""
+        if not isinstance(info, dict):
+            info = {'status': str(info)}
+        
+        # Ensure we have all required fields
+        if 'status' not in info:
+            info['status'] = 'Moving'
+        if 'position' not in info:
+            info['position'] = {'x': 0, 'y': 0, 'angle': 0}
+        if 'progress' not in info:
+            info['progress'] = None
+        if 'details' not in info:
+            info['details'] = None
+            
         self.movement_info = info
         self.update_status(info['status'])
 
     def update_head_movement(self, info):
         """Update head movement information."""
+        if not isinstance(info, dict):
+            info = {'status': str(info)}
+            
+        # Ensure we have all required fields
+        if 'x' not in info:
+            info['x'] = 0
+        if 'y' not in info:
+            info['y'] = 0
+        if 'target' not in info:
+            info['target'] = None
+            
         self.head_movement_info = info
+        self.update_status(info['status'])
 
     def start(self):
         """Start the video hosting server in a separate thread."""
