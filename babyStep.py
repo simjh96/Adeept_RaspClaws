@@ -293,7 +293,11 @@ if __name__ == '__main__':
         host = VideoHost(port=5000)
         
         # Initialize camera first
-        host.init_camera()
+        if not host.init_camera():
+            print("Failed to initialize camera. Exiting...")
+            sys.exit(1)
+            
+        print("Camera initialized successfully")
         
         # Initialize motion detector with the camera instance
         detector = MotionDetector(host)
@@ -322,4 +326,9 @@ if __name__ == '__main__':
         host.update_status("Shutting down...")
         with servo_lock:
             move.clean_all()
-        host.cleanup() 
+        host.cleanup()
+    except Exception as e:
+        print(f"\nError during startup: {e}")
+        if 'host' in locals():
+            host.cleanup()
+        sys.exit(1) 

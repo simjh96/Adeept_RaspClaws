@@ -6,6 +6,7 @@ import json
 from flask import Flask, Response, jsonify
 from flask_cors import CORS
 from datetime import datetime
+import time
 
 # Add server directory to Python path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'server'))
@@ -45,6 +46,12 @@ class VideoHost:
             if self.camera is None:
                 try:
                     self.camera = Camera()
+                    # Test camera capture
+                    test_frame = self.camera.get_frame()
+                    if test_frame is None:
+                        print("Warning: Camera initialization succeeded but no frames captured")
+                        return False
+                    return True
                 except Exception as e:
                     print(f"Error initializing camera: {e}")
                     return False
@@ -67,6 +74,7 @@ class VideoHost:
 
     def index(self):
         """Video streaming home page."""
+        video_feed_url = '/video_feed'  # Direct URL instead of template
         return """
         <html>
             <head>
@@ -472,7 +480,7 @@ class VideoHost:
                 <div class="container">
                     <div class="video-section">
                         <div class="video-wrapper">
-                            <img class="video-feed" src="{{ url_for('video_feed') }}">
+                            <img class="video-feed" src="/video_feed">
                             <canvas id="videoOverlay"></canvas>
                         </div>
                         <div class="compass-container">
@@ -489,6 +497,7 @@ class VideoHost:
                     </div>
                     
                     <div class="detection-section">
+                        <div id="processStatus" class="status-box">Initializing...</div>
                         <div class="main-detection">
                             <img id="mainDetectionImage" style="display: none;">
                             <span id="detectionTimestamp"></span>
@@ -496,10 +505,9 @@ class VideoHost:
                         <div class="history-container" id="historyContainer">
                             <!-- Detection history will be populated here -->
                         </div>
-                    </div>
-                    
-                    <div class="stats-section">
-                        <!-- Stats content -->
+                        <div id="statsContainer" class="stats-section">
+                            <!-- Stats content -->
+                        </div>
                     </div>
                 </div>
             </body>
@@ -508,7 +516,25 @@ class VideoHost:
 
     def video_feed(self):
         """Video streaming route."""
-        return Response(self.gen(),
+        def generate():
+            if not self.init_camera():
+                return
+                
+            while True:
+                with self.camera_lock:
+                    try:
+                        frame = self.camera.get_frame()
+                        if frame is not None:
+                            yield (b'--frame\r\n'
+                                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+                        else:
+                            print("Warning: Empty frame received")
+                            time.sleep(0.1)
+                    except Exception as e:
+                        print(f"Error in video feed: {e}")
+                        time.sleep(0.1)
+                        
+        return Response(generate(),
                        mimetype='multipart/x-mixed-replace; boundary=frame')
     
     def get_frame_safe(self):
@@ -518,7 +544,10 @@ class VideoHost:
             
         with self.camera_lock:
             try:
-                return self.camera.get_frame()
+                frame = self.camera.get_frame()
+                if frame is None:
+                    print("Warning: No frame captured from camera")
+                return frame
             except Exception as e:
                 print(f"Error getting frame: {e}")
                 return None
