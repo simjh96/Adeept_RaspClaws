@@ -945,8 +945,7 @@ class VideoHost:
                 port=self.port,
                 threaded=True,
                 debug=self.debug,
-                use_reloader=False,  # Disable reloader in debug mode
-                log_level='ERROR'  # Suppress most Flask logging
+                use_reloader=False  # Disable reloader in debug mode
             )
             
         self.server_thread = threading.Thread(target=run_server)
