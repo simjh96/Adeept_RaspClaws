@@ -30,17 +30,19 @@ class MotionDetector:
         self.object_position = None
         self.last_detection_image = None
         self.detection_info = None
-        self.is_moving = False  # Add flag to track movement state
+        self.is_moving = False
+        self.scan_count = 0  # Add counter for background reset
         
     def reset_detection(self):
         """Reset the background model to start fresh detection."""
         self.avg = None
         self.last_motion = None
         self.motion_detected = False
+        self.scan_count = 0
         
     def detect_motion(self):
         """Detect motion and calculate object position relative to robot."""
-        if self.is_moving:  # Skip detection if robot is moving
+        if self.is_moving:
             return None
             
         frame = self.camera.get_frame_safe()
@@ -64,24 +66,31 @@ class MotionDetector:
         # Initialize background model if needed
         if self.avg is None:
             self.avg = gray.copy().astype("float")
-            time.sleep(0.2)  # Reduced from 0.5s to 0.2s for faster initialization
+            time.sleep(0.1)  # Reduced initialization delay
+            return None
+
+        # Reset background model periodically to handle changes
+        self.scan_count += 1
+        if self.scan_count > 100:  # Reset after 100 scans
+            self.avg = gray.copy().astype("float")
+            self.scan_count = 0
             return None
 
         # Accumulate weighted average with faster adaptation
-        cv2.accumulateWeighted(gray, self.avg, 0.3)  # Increased from 0.5 to 0.3 for faster updates
+        cv2.accumulateWeighted(gray, self.avg, 0.2)  # Faster background update
         frameDelta = cv2.absdiff(gray, cv2.convertScaleAbs(self.avg))
 
-        # Threshold and dilate with lower threshold for faster detection
-        thresh = cv2.threshold(frameDelta, 3, 255, cv2.THRESH_BINARY)[1]  # Reduced threshold from 5 to 3
+        # Threshold and dilate
+        thresh = cv2.threshold(frameDelta, 3, 255, cv2.THRESH_BINARY)[1]
         thresh = cv2.dilate(thresh, None, iterations=2)
 
         # Find contours
         contours = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
 
-        # Process largest contour with reduced area threshold
+        # Process largest contour
         if len(contours) > 0:
             largest_contour = max(contours, key=cv2.contourArea)
-            if cv2.contourArea(largest_contour) > 2000:  # Reduced from 5000 to 2000
+            if cv2.contourArea(largest_contour) > 1500:  # Reduced area threshold
                 (x, y, w, h) = cv2.boundingRect(largest_contour)
                 center_x = x + w//2
                 center_y = y + h//2
@@ -331,22 +340,21 @@ def sequence_with_status():
         host.update_status("Initializing robot position...")
         initialize_robot()
         
-        # Store last known position with more detail
         last_position = None
         last_head_position = None
         head_movement_info = None
         
-        # Ensure LEDs are off at start
+        # Start with LEDs off
         RL.both_off()
-        time.sleep(0.1)
         
         while True:  # Main loop
+            # Start new detection cycle with LED
+            RL.red()  # LED on for scanning
             host.update_status("Starting detection sequence...")
             
             # Reset motion detector for new detection sequence
             detector.reset_detection()
             
-            # If we have a last position, try to look there first
             if last_position and last_head_position:
                 host.update_status("Calculating head movement to last position...")
                 
@@ -386,27 +394,24 @@ def sequence_with_status():
                         safe_look(direction, steps)
                     time.sleep(0.2)  # Reduced delay
             
-            # Reduced delay for background model initialization
-            time.sleep(0.5)
-            
-            # Start detection mode with red LED
-            RL.red()
-            host.update_status("Motion detection active - Scanning for movement...")
+            # Minimal delay for background model
+            time.sleep(0.1)
             
             position = None
-            detection_start_time = time.time()
+            scan_start_time = time.time()
             
-            while not position and not detector.is_moving:  # Only detect when not moving
-                # Blink red LED during detection
-                if time.time() - detection_start_time > 1.0:  # Blink every second
-                    RL.red()
-                    detection_start_time = time.time()
-                
+            while not position and not detector.is_moving:
                 position = detector.detect_motion()
+                
+                # Update status periodically
+                if time.time() - scan_start_time > 1.0:
+                    host.update_status("Scanning for movement...")
+                    scan_start_time = time.time()
+                
                 if position:
                     host.update_status("Motion detected! Moving to target...")
                     
-                    # Store current head position before moving
+                    # Store current head position
                     with servo_lock:
                         last_head_position = {
                             'x': move.Left_Right_input,
@@ -414,32 +419,31 @@ def sequence_with_status():
                         }
                     last_position = position
                     
-                    # Movement mode - Blue LED
-                    RL.blue()
+                    # Turn off LED during movement
+                    RL.both_off()
                     
                     # Move towards object
                     move_to_object(position)
                     
-                    # Return to detection mode
-                    RL.red()
-                    host.update_status("Movement complete - Resuming detection...")
-                    
-                    # Short delay before next detection
-                    time.sleep(0.2)
+                    host.update_status("Movement complete - Starting new scan...")
+                    time.sleep(0.1)  # Brief pause before next scan
                     break
                 
-                time.sleep(0.05)  # Reduced delay between detection attempts
+                time.sleep(0.01)  # Minimal delay between scans
+            
+            # Ensure LED is off between detection cycles
+            RL.both_off()
             
     except Exception as e:
         error_msg = f"Error in main sequence: {e}"
         print(error_msg)
         host.update_status(error_msg)
-        RL.both_off()  # Ensure LEDs are off even if error occurs
+        RL.both_off()
         with servo_lock:
             move.clean_all()
     finally:
-        RL.both_off()  # Ensure LEDs are off when exiting
-        RL.pause()  # Clean up LED thread
+        RL.both_off()
+        RL.pause()
 
 if __name__ == '__main__':
     try:
