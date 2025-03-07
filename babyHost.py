@@ -33,9 +33,6 @@ class VideoHost:
             self.camera = None
             self.port = port
             self.camera_lock = threading.Lock()
-            self.current_status = "Initializing..."
-            self.movement_info = None
-            self.head_movement_info = None
             
             # Register routes
             self.app.route('/')(self.index)
@@ -144,33 +141,6 @@ class VideoHost:
                         background: #2a2a2a;
                         padding: 15px;
                         border-radius: 5px;
-                        margin-top: 15px;
-                    }
-                    .map-section {
-                        background: #2a2a2a;
-                        padding: 15px;
-                        border-radius: 5px;
-                        margin-bottom: 15px;
-                    }
-                    .map-title {
-                        font-size: 16px;
-                        margin-bottom: 10px;
-                        color: #00ff00;
-                    }
-                    .map-canvas-container {
-                        position: relative;
-                        width: 100%;
-                        padding-bottom: 100%; /* Make it square */
-                        background: #1a1a1a;
-                        border: 1px solid #333;
-                        border-radius: 3px;
-                    }
-                    #mapCanvas {
-                        position: absolute;
-                        top: 0;
-                        left: 0;
-                        width: 100%;
-                        height: 100%;
                     }
                     .history-title {
                         font-size: 16px;
@@ -275,40 +245,6 @@ class VideoHost:
                         border-radius: 5px;
                         margin-bottom: 15px;
                     }
-                    .movement-info {
-                        background: rgba(0, 0, 0, 0.8);
-                        padding: 15px;
-                        border-radius: 5px;
-                        margin-top: 10px;
-                        font-family: monospace;
-                        border: 1px solid #00ff00;
-                    }
-                    .movement-title {
-                        color: #00ff00;
-                        font-size: 14px;
-                        margin-bottom: 10px;
-                        font-weight: bold;
-                    }
-                    .movement-detail {
-                        color: #888;
-                        margin: 5px 0;
-                    }
-                    .movement-highlight {
-                        color: #00ff00;
-                        font-weight: bold;
-                    }
-                    .movement-progress {
-                        height: 4px;
-                        background: #333;
-                        margin: 10px 0;
-                        border-radius: 2px;
-                    }
-                    .movement-progress-bar {
-                        height: 100%;
-                        background: #00ff00;
-                        border-radius: 2px;
-                        transition: width 0.3s ease;
-                    }
                 </style>
                 <script>
                     let detectionHistory = [];
@@ -318,163 +254,9 @@ class VideoHost:
                     let lastFrameCenter = null;
                     let lastObjectCenter = null;
                     let overlayTimeout = null;
+                    let mapPadding = 50; // padding around the content
+                    let initialMapScale = 50; // Initial scale for empty map
 
-                    function initMap() {
-                        const canvas = document.getElementById('mapCanvas');
-                        const ctx = canvas.getContext('2d');
-                        const width = canvas.width;
-                        const height = canvas.height;
-                        
-                        // Clear canvas
-                        ctx.fillStyle = '#1a1a1a';
-                        ctx.fillRect(0, 0, width, height);
-                        
-                        // Draw grid
-                        ctx.strokeStyle = '#333';
-                        ctx.lineWidth = 1;
-                        
-                        // Draw grid lines
-                        for(let i = 0; i <= width; i += mapScale) {
-                            ctx.beginPath();
-                            ctx.moveTo(i, 0);
-                            ctx.lineTo(i, height);
-                            ctx.stroke();
-                            
-                            ctx.beginPath();
-                            ctx.moveTo(0, i);
-                            ctx.lineTo(width, i);
-                            ctx.stroke();
-                        }
-                        
-                        // Draw center position
-                        const centerX = width / 2;
-                        const centerY = height / 2;
-                        
-                        ctx.strokeStyle = '#00ff00';
-                        ctx.lineWidth = 2;
-                        
-                        // Draw crosshair at center
-                        ctx.beginPath();
-                        ctx.moveTo(centerX - 10, centerY);
-                        ctx.lineTo(centerX + 10, centerY);
-                        ctx.moveTo(centerX, centerY - 10);
-                        ctx.lineTo(centerX, centerY + 10);
-                        ctx.stroke();
-                        
-                        return { ctx, width, height, centerX, centerY };
-                    }
-                    
-                    function updateMap(data) {
-                        const canvas = document.getElementById('mapCanvas');
-                        if (!canvas) return;
-                        
-                        const { ctx, width, height, centerX, centerY } = initMap();
-                        
-                        // Draw path history
-                        ctx.strokeStyle = '#004400';
-                        ctx.lineWidth = 2;
-                        ctx.beginPath();
-                        pathHistory.forEach((pos, index) => {
-                            const x = centerX + pos.x * mapScale;
-                            const y = centerY - pos.y * mapScale;
-                            if (index === 0) {
-                                ctx.moveTo(x, y);
-                            } else {
-                                ctx.lineTo(x, y);
-                            }
-                        });
-                        ctx.stroke();
-                        
-                        // Draw detection points
-                        detectionHistory.forEach(detection => {
-                            const info = detection.info;
-                            const distance = info.position.distance;
-                            const angle = info.position.angle_x * Math.PI / 180;
-                            
-                            const x = centerX + distance * Math.cos(angle) * mapScale;
-                            const y = centerY - distance * Math.sin(angle) * mapScale;
-                            
-                            ctx.fillStyle = '#ff0000';
-                            ctx.beginPath();
-                            ctx.arc(x, y, 5, 0, Math.PI * 2);
-                            ctx.fill();
-                        });
-                        
-                        // Draw current robot position
-                        const robotX = centerX + robotPosition.x * mapScale;
-                        const robotY = centerY - robotPosition.y * mapScale;
-                        
-                        // Draw robot triangle
-                        ctx.save();
-                        ctx.translate(robotX, robotY);
-                        ctx.rotate(-robotPosition.angle * Math.PI / 180);
-                        
-                        ctx.fillStyle = '#00ff00';
-                        ctx.beginPath();
-                        ctx.moveTo(0, -10);
-                        ctx.lineTo(-7, 10);
-                        ctx.lineTo(7, 10);
-                        ctx.closePath();
-                        ctx.fill();
-                        
-                        ctx.restore();
-                    }
-                    
-                    function updateRobotPosition(data) {
-                        if (data.movement_info) {
-                            const info = data.movement_info;
-                            
-                            // Update robot position based on movement
-                            if (info.status.includes('%')) {
-                                const progress = parseInt(info.status.match(/\d+(?=%)/)[0]) / 100;
-                                
-                                if (info.status.includes('Turn')) {
-                                    // Update rotation
-                                    const turnAngle = info.initial_position.angle_x;
-                                    robotPosition.angle += turnAngle * progress;
-                                } else if (info.status.includes('Forward')) {
-                                    // Update position
-                                    const distance = info.initial_position.distance * progress;
-                                    robotPosition.x += distance * Math.cos(robotPosition.angle * Math.PI / 180);
-                                    robotPosition.y += distance * Math.sin(robotPosition.angle * Math.PI / 180);
-                                }
-                                
-                                // Add position to path history
-                                pathHistory.push({...robotPosition});
-                            }
-                        }
-                        
-                        // Update map
-                        updateMap(data);
-                    }
-                    
-                    function updateStatus() {
-                        fetch('/status')
-                            .then(response => response.json())
-                            .then(data => {
-                                document.getElementById('processStatus').innerText = data.status;
-                                
-                                // Update movement info and map
-                                updateMovementInfo(data);
-                                updateRobotPosition(data);
-                                
-                                if (data.detection_info && data.last_detection_image) {
-                                    updateOverlay(data);
-                                    
-                                    const detection = {
-                                        image: data.last_detection_image,
-                                        info: data.detection_info
-                                    };
-                                    
-                                    if (!lastDetection || 
-                                        lastDetection.info.timestamp !== detection.info.timestamp) {
-                                        updateDetectionHistory(detection);
-                                    }
-                                }
-                            })
-                            .catch(error => console.error('Error updating status:', error));
-                    }
-                    
                     function updateOverlay(data) {
                         const wrapper = document.querySelector('.video-wrapper');
                         const video = document.querySelector('.video-feed');
@@ -586,45 +368,49 @@ class VideoHost:
                             }
                         };
                         
-                        // Add to history array without removing old entries
+                        // Add to history array
                         detectionHistory.unshift(historyItem);
+                        if (detectionHistory.length > MAX_HISTORY) {
+                            detectionHistory.pop();
+                        }
                         
-                        // Update history display by appending new item
+                        // Update history display
                         const container = document.querySelector('.history-grid');
                         if (!container) return;
                         
-                        // Create new history item element
-                        const newItemDiv = document.createElement('div');
-                        newItemDiv.className = 'history-item';
-                        newItemDiv.innerHTML = `
-                            <div class="history-timestamp">${new Date(historyItem.timestamp).toLocaleTimeString()}</div>
-                            <div class="history-canvas-container">
-                                <canvas class="history-image" 
-                                        width="320" height="240" 
-                                        data-index="latest"></canvas>
+                        container.innerHTML = detectionHistory.map((item, index) => `
+                            <div class="history-item">
+                                <div class="history-timestamp">${new Date(item.timestamp).toLocaleTimeString()}</div>
+                                <div class="history-canvas-container">
+                                    <canvas class="history-image" 
+                                            width="320" height="240" 
+                                            data-index="${index}"></canvas>
+                                </div>
+                                <div class="history-info">
+                                    <div class="history-stat">Distance: ${item.info.position.distance.toFixed(2)} units</div>
+                                    <div class="history-stat">Angle X: ${item.info.position.angle_x.toFixed(2)}°</div>
+                                    <div class="history-stat">Angle Y: ${item.info.position.angle_y.toFixed(2)}°</div>
+                                </div>
                             </div>
-                            <div class="history-info">
-                                <div class="history-stat">Distance: ${historyItem.info.position.distance.toFixed(2)} units</div>
-                                <div class="history-stat">Angle X: ${historyItem.info.position.angle_x.toFixed(2)}°</div>
-                                <div class="history-stat">Angle Y: ${historyItem.info.position.angle_y.toFixed(2)}°</div>
-                            </div>
-                        `;
+                        `).join('');
                         
-                        // Insert at the beginning
-                        container.insertBefore(newItemDiv, container.firstChild);
-                        
-                        // Draw new image and overlay
-                        const canvas = newItemDiv.querySelector('canvas');
-                        if (canvas) {
-                            const ctx = canvas.getContext('2d');
-                            const img = new Image();
-                            img.onload = () => {
-                                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                                drawDetectionOverlay(ctx, historyItem.info, canvas.width, canvas.height);
-                            };
-                            img.src = 'data:image/jpeg;base64,' + historyItem.image;
-                        }
+                        // Draw images and overlays
+                        detectionHistory.forEach((item, index) => {
+                            const canvas = document.querySelector(`canvas[data-index="${index}"]`);
+                            if (canvas) {
+                                const ctx = canvas.getContext('2d');
+                                const img = new Image();
+                                img.onload = () => {
+                                    // Clear canvas
+                                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                                    // Draw image
+                                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                                    // Draw overlay
+                                    drawDetectionOverlay(ctx, item.info, canvas.width, canvas.height);
+                                };
+                                img.src = 'data:image/jpeg;base64,' + item.image;
+                            }
+                        });
                     }
 
                     function updateLiveStats(info) {
@@ -658,92 +444,35 @@ class VideoHost:
                         }
                     }
                     
-                    function updateMovementInfo(data) {
-                        const container = document.querySelector('.movement-info');
-                        if (!container) return;
-
-                        if (data.movement_info) {
-                            const info = data.movement_info;
-                            const plan = info.movement_plan;
-                            
-                            let html = `
-                                <div class="movement-title">Movement Details</div>
-                                <div class="movement-detail">
-                                    Distance: <span class="movement-highlight">${info.initial_position.distance.toFixed(2)}</span> units
-                                </div>
-                                <div class="movement-detail">
-                                    Angle X: <span class="movement-highlight">${info.initial_position.angle_x.toFixed(2)}°</span>
-                                </div>
-                                <div class="movement-detail">
-                                    Angle Y: <span class="movement-highlight">${info.initial_position.angle_y.toFixed(2)}°</span>
-                                </div>
-                                <div class="movement-detail">
-                                    Status: <span class="movement-highlight">${info.status}</span>
-                                </div>
-                            `;
-
-                            // Add progress bar if status includes progress
-                            if (info.status.includes('%')) {
-                                const progress = parseInt(info.status.match(/\d+(?=%)/)[0]);
-                                html += `
-                                    <div class="movement-progress">
-                                        <div class="movement-progress-bar" style="width: ${progress}%"></div>
-                                    </div>
-                                `;
-                            }
-
-                            container.innerHTML = html;
-                            
-                            // Add movement info to history
-                            const historyContainer = document.querySelector('.history-grid');
-                            if (historyContainer && info.status.includes('Movement complete')) {
-                                const movementHistoryItem = document.createElement('div');
-                                movementHistoryItem.className = 'history-item';
-                                movementHistoryItem.innerHTML = `
-                                    <div class="history-timestamp">${new Date().toLocaleTimeString()}</div>
-                                    <div class="history-info">
-                                        <div class="history-stat">Movement Complete</div>
-                                        <div class="history-stat">Distance: ${info.initial_position.distance.toFixed(2)} units</div>
-                                        <div class="history-stat">Turn Angle: ${info.initial_position.angle_x.toFixed(2)}°</div>
-                                    </div>
-                                `;
-                                historyContainer.insertBefore(movementHistoryItem, historyContainer.firstChild);
-                            }
-                        } else if (data.head_movement_info) {
-                            const info = data.head_movement_info;
-                            container.innerHTML = `
-                                <div class="movement-title">Head Movement</div>
-                                <div class="movement-detail">
-                                    From: <span class="movement-highlight">X: ${info.from.x}, Y: ${info.from.y}</span>
-                                </div>
-                                <div class="movement-detail">
-                                    To: <span class="movement-highlight">X: ${info.to.x}, Y: ${info.to.y}</span>
-                                </div>
-                                <div class="movement-detail">
-                                    Change: <span class="movement-highlight">X: ${info.delta.x}, Y: ${info.delta.y}</span>
-                                </div>
-                            `;
-                            
-                            // Add head movement to history
-                            const historyContainer = document.querySelector('.history-grid');
-                            if (historyContainer) {
-                                const headHistoryItem = document.createElement('div');
-                                headHistoryItem.className = 'history-item';
-                                headHistoryItem.innerHTML = `
-                                    <div class="history-timestamp">${new Date().toLocaleTimeString()}</div>
-                                    <div class="history-info">
-                                        <div class="history-stat">Head Movement</div>
-                                        <div class="history-stat">X Change: ${info.delta.x}</div>
-                                        <div class="history-stat">Y Change: ${info.delta.y}</div>
-                                    </div>
-                                `;
-                                historyContainer.insertBefore(headHistoryItem, historyContainer.firstChild);
-                            }
-                        } else {
-                            container.innerHTML = '';
-                        }
+                    function updateStatus() {
+                        fetch('/status')
+                            .then(response => response.json())
+                            .then(data => {
+                                document.getElementById('processStatus').innerText = data.status;
+                                
+                                if (data.detection_info && data.last_detection_image) {
+                                    // Update live overlay
+                                    updateOverlay(data);
+                                    
+                                    const detection = {
+                                        image: data.last_detection_image,
+                                        info: data.detection_info
+                                    };
+                                    
+                                    // Only add to history if it's a new detection
+                                    const lastDetection = detectionHistory[0];
+                                    if (!lastDetection || 
+                                        lastDetection.info.timestamp !== detection.info.timestamp) {
+                                        console.log("New detection added to history");
+                                        updateDetectionHistory(detection);
+                                    }
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Error updating status:', error);
+                            });
                     }
-
+                    
                     // Start when page loads
                     window.onload = function() {
                         const video = document.querySelector('.video-feed');
@@ -766,6 +495,215 @@ class VideoHost:
                         
                         // Update status every 100ms
                         setInterval(updateStatus, 100);
+                    }
+
+                    function calculateMapBounds() {
+                        // Start with robot's current position
+                        let bounds = {
+                            minX: robotPosition.x,
+                            maxX: robotPosition.x,
+                            minY: robotPosition.y,
+                            maxY: robotPosition.y
+                        };
+                        
+                        // Include path history
+                        pathHistory.forEach(pos => {
+                            bounds.minX = Math.min(bounds.minX, pos.x);
+                            bounds.maxX = Math.max(bounds.maxX, pos.x);
+                            bounds.minY = Math.min(bounds.minY, pos.y);
+                            bounds.maxY = Math.max(bounds.maxY, pos.y);
+                        });
+                        
+                        // Include detection points
+                        detectionHistory.forEach(detection => {
+                            const info = detection.info;
+                            const distance = info.position.distance;
+                            const angle = info.position.angle_x * Math.PI / 180;
+                            const x = distance * Math.cos(angle);
+                            const y = distance * Math.sin(angle);
+                            
+                            bounds.minX = Math.min(bounds.minX, x);
+                            bounds.maxX = Math.max(bounds.maxX, x);
+                            bounds.minY = Math.min(bounds.minY, y);
+                            bounds.maxY = Math.max(bounds.maxY, y);
+                        });
+                        
+                        // Add padding
+                        const padding = 1; // 1 unit padding
+                        bounds.minX -= padding;
+                        bounds.maxX += padding;
+                        bounds.minY -= padding;
+                        bounds.maxY += padding;
+
+                        // Ensure minimum view size
+                        const minSize = 2; // Minimum 2x2 units view
+                        if (bounds.maxX - bounds.minX < minSize) {
+                            const center = (bounds.maxX + bounds.minX) / 2;
+                            bounds.minX = center - minSize/2;
+                            bounds.maxX = center + minSize/2;
+                        }
+                        if (bounds.maxY - bounds.minY < minSize) {
+                            const center = (bounds.maxY + bounds.minY) / 2;
+                            bounds.minY = center - minSize/2;
+                            bounds.maxY = center + minSize/2;
+                        }
+                        
+                        return bounds;
+                    }
+
+                    function initMap() {
+                        const canvas = document.getElementById('mapCanvas');
+                        const ctx = canvas.getContext('2d');
+                        
+                        // Set canvas size to match container
+                        const container = canvas.parentElement;
+                        canvas.width = container.clientWidth;
+                        canvas.height = container.clientHeight;
+                        
+                        const width = canvas.width;
+                        const height = canvas.height;
+                        
+                        // Clear canvas
+                        ctx.fillStyle = '#1a1a1a';
+                        ctx.fillRect(0, 0, width, height);
+                        
+                        // Calculate bounds and scale
+                        const bounds = calculateMapBounds();
+                        const contentWidth = Math.max(2, bounds.maxX - bounds.minX);
+                        const contentHeight = Math.max(2, bounds.maxY - bounds.minY);
+                        
+                        // Calculate scale to fit content
+                        const scaleX = (width - mapPadding * 2) / contentWidth;
+                        const scaleY = (height - mapPadding * 2) / contentHeight;
+                        mapScale = Math.min(scaleX, scaleY, initialMapScale);
+                        
+                        // Calculate center offset
+                        const centerX = width / 2;
+                        const centerY = height / 2;
+                        
+                        // Draw grid
+                        ctx.strokeStyle = '#333';
+                        ctx.lineWidth = 1;
+                        
+                        // Draw grid lines based on scale
+                        const gridSize = 0.5; // 0.5 unit grid
+                        const gridCount = Math.max(width, height) / mapScale;
+                        const startX = -gridCount/2;
+                        const endX = gridCount/2;
+                        const startY = -gridCount/2;
+                        const endY = gridCount/2;
+                        
+                        for(let x = startX; x <= endX; x += gridSize) {
+                            const screenX = centerX + x * mapScale;
+                            ctx.beginPath();
+                            ctx.moveTo(screenX, mapPadding);
+                            ctx.lineTo(screenX, height - mapPadding);
+                            ctx.stroke();
+                        }
+                        
+                        for(let y = startY; y <= endY; y += gridSize) {
+                            const screenY = centerY - y * mapScale;
+                            ctx.beginPath();
+                            ctx.moveTo(mapPadding, screenY);
+                            ctx.lineTo(width - mapPadding, screenY);
+                            ctx.stroke();
+                        }
+                        
+                        // Draw axes
+                        ctx.strokeStyle = '#00ff00';
+                        ctx.lineWidth = 2;
+                        
+                        // X axis
+                        ctx.beginPath();
+                        ctx.moveTo(mapPadding, centerY);
+                        ctx.lineTo(width - mapPadding, centerY);
+                        ctx.stroke();
+                        
+                        // Y axis
+                        ctx.beginPath();
+                        ctx.moveTo(centerX, mapPadding);
+                        ctx.lineTo(centerX, height - mapPadding);
+                        ctx.stroke();
+                        
+                        // Draw origin marker
+                        ctx.beginPath();
+                        ctx.arc(centerX, centerY, 5, 0, Math.PI * 2);
+                        ctx.stroke();
+                        
+                        return { ctx, width, height, centerX, centerY };
+                    }
+                    
+                    function updateMap(data) {
+                        const canvas = document.getElementById('mapCanvas');
+                        if (!canvas) return;
+                        
+                        const { ctx, width, height, centerX, centerY } = initMap();
+                        
+                        // Draw path history
+                        if (pathHistory.length > 0) {
+                            ctx.strokeStyle = '#004400';
+                            ctx.lineWidth = 2;
+                            ctx.beginPath();
+                            pathHistory.forEach((pos, index) => {
+                                const x = centerX + pos.x * mapScale;
+                                const y = centerY - pos.y * mapScale;
+                                if (index === 0) {
+                                    ctx.moveTo(x, y);
+                                } else {
+                                    ctx.lineTo(x, y);
+                                }
+                            });
+                            ctx.stroke();
+                        }
+                        
+                        // Draw detection points
+                        detectionHistory.forEach(detection => {
+                            const info = detection.info;
+                            const distance = info.position.distance;
+                            const angle = info.position.angle_x * Math.PI / 180;
+                            
+                            const x = centerX + distance * Math.cos(angle) * mapScale;
+                            const y = centerY - distance * Math.sin(angle) * mapScale;
+                            
+                            // Draw detection point
+                            ctx.fillStyle = '#ff0000';
+                            ctx.beginPath();
+                            ctx.arc(x, y, 5, 0, Math.PI * 2);
+                            ctx.fill();
+                            
+                            // Draw line from origin to detection point
+                            ctx.strokeStyle = '#440000';
+                            ctx.setLineDash([5, 5]);
+                            ctx.beginPath();
+                            ctx.moveTo(centerX, centerY);
+                            ctx.lineTo(x, y);
+                            ctx.stroke();
+                            ctx.setLineDash([]);
+                        });
+                        
+                        // Draw current robot position
+                        const robotX = centerX + robotPosition.x * mapScale;
+                        const robotY = centerY - robotPosition.y * mapScale;
+                        
+                        // Draw robot triangle
+                        ctx.save();
+                        ctx.translate(robotX, robotY);
+                        ctx.rotate(-robotPosition.angle * Math.PI / 180);
+                        
+                        ctx.fillStyle = '#00ff00';
+                        ctx.beginPath();
+                        ctx.moveTo(0, -10);
+                        ctx.lineTo(-7, 10);
+                        ctx.lineTo(7, 10);
+                        ctx.closePath();
+                        ctx.fill();
+                        
+                        ctx.restore();
+                        
+                        // Draw scale indicator
+                        ctx.fillStyle = '#888';
+                        ctx.font = '12px monospace';
+                        ctx.fillText(`Scale: ${(1/mapScale).toFixed(2)} units/pixel`, 10, height - 10);
                     }
                 </script>
             </head>
@@ -792,13 +730,6 @@ class VideoHost:
                     
                     <div class="detection-section">
                         <div id="processStatus" class="status-box">Initializing...</div>
-                        <div class="movement-info"></div>
-                        <div class="map-section">
-                            <div class="map-title">Robot Position Map</div>
-                            <div class="map-canvas-container">
-                                <canvas id="mapCanvas"></canvas>
-                            </div>
-                        </div>
                         <div class="history-section">
                             <div class="history-title">Detection History</div>
                             <div class="history-grid">
@@ -854,9 +785,7 @@ class VideoHost:
         status_data = {
             'status': self.current_status,
             'detection_info': None,
-            'last_detection_image': None,
-            'movement_info': self.movement_info,
-            'head_movement_info': self.head_movement_info
+            'last_detection_image': None
         }
         
         if self.detector:
@@ -873,15 +802,6 @@ class VideoHost:
     def update_status(self, status):
         """Update the current process status."""
         self.current_status = status
-
-    def update_movement_info(self, info):
-        """Update current movement information."""
-        self.movement_info = info
-        self.update_status(info['status'])
-
-    def update_head_movement(self, info):
-        """Update head movement information."""
-        self.head_movement_info = info
 
     def start(self):
         """Start the video hosting server in a separate thread."""
