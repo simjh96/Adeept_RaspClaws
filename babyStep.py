@@ -16,7 +16,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'server'))
 import move
 import LED
 from babyHost import VideoHost
-from robotLight import RobotLight
+from robotLight import RobotLight  # Direct import since server is in Python path
 
 # Global servo lock to prevent competing servo control
 servo_lock = threading.Lock()
@@ -253,7 +253,7 @@ def move_to_object(position):
 
 def sequence_with_status():
     # Initialize LED control
-    RL = RobotLight()
+    RL = RobotLight()  # Use direct class name
     RL.start()
     
     try:
@@ -280,8 +280,16 @@ def sequence_with_status():
             if last_position and last_head_position:
                 host.update_status("Returning to last detected position...")
                 with servo_lock:
-                    # Restore head position
-                    move.move_head(last_head_position['x'], last_head_position['y'])
+                    # Move head to stored position using look functions
+                    if last_head_position['x'] > move.Left_Right_input:
+                        move.look_right(abs(last_head_position['x'] - move.Left_Right_input))
+                    elif last_head_position['x'] < move.Left_Right_input:
+                        move.look_left(abs(last_head_position['x'] - move.Left_Right_input))
+                        
+                    if last_head_position['y'] > move.Up_Down_input:
+                        move.look_up(abs(last_head_position['y'] - move.Up_Down_input))
+                    elif last_head_position['y'] < move.Up_Down_input:
+                        move.look_down(abs(last_head_position['y'] - move.Up_Down_input))
                     time.sleep(0.5)
             
             # Wait for background model to initialize
@@ -296,8 +304,8 @@ def sequence_with_status():
                     # Store current head position before moving
                     with servo_lock:
                         last_head_position = {
-                            'x': move.get_head_x(),
-                            'y': move.get_head_y()
+                            'x': move.Left_Right_input,  # Using global variable instead of function
+                            'y': move.Up_Down_input      # Using global variable instead of function
                         }
                     last_position = position
                     
