@@ -77,6 +77,22 @@ def perform_movement_sequence():
     # Return to home position
     move.look_home()
 
+    # Move head
+    # Up 30 degrees
+    move.look_up()
+    time.sleep(0.5)
+    # Down 30 degrees
+    move.look_down()
+    time.sleep(0.5)
+    # Left 30 degrees
+    move.look_left()
+    time.sleep(0.5)
+    # Right 30 degrees
+    move.look_right()
+    time.sleep(0.5)
+    # Return to home position
+    move.look_home()
+
 def movement_thread():
     """Thread function to run the movement sequence."""
     time.sleep(2)  # Wait for server to start
