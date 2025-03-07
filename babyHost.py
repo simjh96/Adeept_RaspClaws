@@ -144,6 +144,33 @@ class VideoHost:
                         background: #2a2a2a;
                         padding: 15px;
                         border-radius: 5px;
+                        margin-top: 15px;
+                    }
+                    .map-section {
+                        background: #2a2a2a;
+                        padding: 15px;
+                        border-radius: 5px;
+                        margin-bottom: 15px;
+                    }
+                    .map-title {
+                        font-size: 16px;
+                        margin-bottom: 10px;
+                        color: #00ff00;
+                    }
+                    .map-canvas-container {
+                        position: relative;
+                        width: 100%;
+                        padding-bottom: 100%; /* Make it square */
+                        background: #1a1a1a;
+                        border: 1px solid #333;
+                        border-radius: 3px;
+                    }
+                    #mapCanvas {
+                        position: absolute;
+                        top: 0;
+                        left: 0;
+                        width: 100%;
+                        height: 100%;
                     }
                     .history-title {
                         font-size: 16px;
@@ -285,11 +312,169 @@ class VideoHost:
                 </style>
                 <script>
                     let detectionHistory = [];
-                    const MAX_HISTORY = 5;
+                    let robotPosition = { x: 0, y: 0, angle: 0 };
+                    let mapScale = 50; // pixels per unit
+                    let pathHistory = [];
                     let lastFrameCenter = null;
                     let lastObjectCenter = null;
                     let overlayTimeout = null;
 
+                    function initMap() {
+                        const canvas = document.getElementById('mapCanvas');
+                        const ctx = canvas.getContext('2d');
+                        const width = canvas.width;
+                        const height = canvas.height;
+                        
+                        // Clear canvas
+                        ctx.fillStyle = '#1a1a1a';
+                        ctx.fillRect(0, 0, width, height);
+                        
+                        // Draw grid
+                        ctx.strokeStyle = '#333';
+                        ctx.lineWidth = 1;
+                        
+                        // Draw grid lines
+                        for(let i = 0; i <= width; i += mapScale) {
+                            ctx.beginPath();
+                            ctx.moveTo(i, 0);
+                            ctx.lineTo(i, height);
+                            ctx.stroke();
+                            
+                            ctx.beginPath();
+                            ctx.moveTo(0, i);
+                            ctx.lineTo(width, i);
+                            ctx.stroke();
+                        }
+                        
+                        // Draw center position
+                        const centerX = width / 2;
+                        const centerY = height / 2;
+                        
+                        ctx.strokeStyle = '#00ff00';
+                        ctx.lineWidth = 2;
+                        
+                        // Draw crosshair at center
+                        ctx.beginPath();
+                        ctx.moveTo(centerX - 10, centerY);
+                        ctx.lineTo(centerX + 10, centerY);
+                        ctx.moveTo(centerX, centerY - 10);
+                        ctx.lineTo(centerX, centerY + 10);
+                        ctx.stroke();
+                        
+                        return { ctx, width, height, centerX, centerY };
+                    }
+                    
+                    function updateMap(data) {
+                        const canvas = document.getElementById('mapCanvas');
+                        if (!canvas) return;
+                        
+                        const { ctx, width, height, centerX, centerY } = initMap();
+                        
+                        // Draw path history
+                        ctx.strokeStyle = '#004400';
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        pathHistory.forEach((pos, index) => {
+                            const x = centerX + pos.x * mapScale;
+                            const y = centerY - pos.y * mapScale;
+                            if (index === 0) {
+                                ctx.moveTo(x, y);
+                            } else {
+                                ctx.lineTo(x, y);
+                            }
+                        });
+                        ctx.stroke();
+                        
+                        // Draw detection points
+                        detectionHistory.forEach(detection => {
+                            const info = detection.info;
+                            const distance = info.position.distance;
+                            const angle = info.position.angle_x * Math.PI / 180;
+                            
+                            const x = centerX + distance * Math.cos(angle) * mapScale;
+                            const y = centerY - distance * Math.sin(angle) * mapScale;
+                            
+                            ctx.fillStyle = '#ff0000';
+                            ctx.beginPath();
+                            ctx.arc(x, y, 5, 0, Math.PI * 2);
+                            ctx.fill();
+                        });
+                        
+                        // Draw current robot position
+                        const robotX = centerX + robotPosition.x * mapScale;
+                        const robotY = centerY - robotPosition.y * mapScale;
+                        
+                        // Draw robot triangle
+                        ctx.save();
+                        ctx.translate(robotX, robotY);
+                        ctx.rotate(-robotPosition.angle * Math.PI / 180);
+                        
+                        ctx.fillStyle = '#00ff00';
+                        ctx.beginPath();
+                        ctx.moveTo(0, -10);
+                        ctx.lineTo(-7, 10);
+                        ctx.lineTo(7, 10);
+                        ctx.closePath();
+                        ctx.fill();
+                        
+                        ctx.restore();
+                    }
+                    
+                    function updateRobotPosition(data) {
+                        if (data.movement_info) {
+                            const info = data.movement_info;
+                            
+                            // Update robot position based on movement
+                            if (info.status.includes('%')) {
+                                const progress = parseInt(info.status.match(/\d+(?=%)/)[0]) / 100;
+                                
+                                if (info.status.includes('Turn')) {
+                                    // Update rotation
+                                    const turnAngle = info.initial_position.angle_x;
+                                    robotPosition.angle += turnAngle * progress;
+                                } else if (info.status.includes('Forward')) {
+                                    // Update position
+                                    const distance = info.initial_position.distance * progress;
+                                    robotPosition.x += distance * Math.cos(robotPosition.angle * Math.PI / 180);
+                                    robotPosition.y += distance * Math.sin(robotPosition.angle * Math.PI / 180);
+                                }
+                                
+                                // Add position to path history
+                                pathHistory.push({...robotPosition});
+                            }
+                        }
+                        
+                        // Update map
+                        updateMap(data);
+                    }
+                    
+                    function updateStatus() {
+                        fetch('/status')
+                            .then(response => response.json())
+                            .then(data => {
+                                document.getElementById('processStatus').innerText = data.status;
+                                
+                                // Update movement info and map
+                                updateMovementInfo(data);
+                                updateRobotPosition(data);
+                                
+                                if (data.detection_info && data.last_detection_image) {
+                                    updateOverlay(data);
+                                    
+                                    const detection = {
+                                        image: data.last_detection_image,
+                                        info: data.detection_info
+                                    };
+                                    
+                                    if (!lastDetection || 
+                                        lastDetection.info.timestamp !== detection.info.timestamp) {
+                                        updateDetectionHistory(detection);
+                                    }
+                                }
+                            })
+                            .catch(error => console.error('Error updating status:', error));
+                    }
+                    
                     function updateOverlay(data) {
                         const wrapper = document.querySelector('.video-wrapper');
                         const video = document.querySelector('.video-feed');
@@ -559,32 +744,6 @@ class VideoHost:
                         }
                     }
 
-                    function updateStatus() {
-                        fetch('/status')
-                            .then(response => response.json())
-                            .then(data => {
-                                document.getElementById('processStatus').innerText = data.status;
-                                
-                                // Update movement info
-                                updateMovementInfo(data);
-                                
-                                if (data.detection_info && data.last_detection_image) {
-                                    updateOverlay(data);
-                                    
-                                    const detection = {
-                                        image: data.last_detection_image,
-                                        info: data.detection_info
-                                    };
-                                    
-                                    if (!lastDetection || 
-                                        lastDetection.info.timestamp !== detection.info.timestamp) {
-                                        updateDetectionHistory(detection);
-                                    }
-                                }
-                            })
-                            .catch(error => console.error('Error updating status:', error));
-                    }
-                    
                     // Start when page loads
                     window.onload = function() {
                         const video = document.querySelector('.video-feed');
@@ -634,6 +793,12 @@ class VideoHost:
                     <div class="detection-section">
                         <div id="processStatus" class="status-box">Initializing...</div>
                         <div class="movement-info"></div>
+                        <div class="map-section">
+                            <div class="map-title">Robot Position Map</div>
+                            <div class="map-canvas-container">
+                                <canvas id="mapCanvas"></canvas>
+                            </div>
+                        </div>
                         <div class="history-section">
                             <div class="history-title">Detection History</div>
                             <div class="history-grid">
