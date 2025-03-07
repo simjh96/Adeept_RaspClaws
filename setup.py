@@ -125,8 +125,7 @@ try:
 	os.system('sudo touch //home/simjh96/startup.sh')
 	with open("//home/simjh96/startup.sh",'w') as file_to_write:
 		#you can choose how to control the robot
-		pass
-		# file_to_write.write("#!/bin/sh\nsudo python3 " + thisPath + "/server/webServer.py")
+		file_to_write.write("#!/bin/sh\nsudo python3 " + thisPath + "/babyStep.py")
 		# file_to_write.write("#!/bin/sh\nsudo python3 " + thisPath + "/server/server.py")
 except:
 	pass
