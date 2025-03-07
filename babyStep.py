@@ -26,6 +26,8 @@ class MotionDetector:
         self.last_motion = None
         self.motion_detected = False
         self.object_position = None
+        self.last_detection_image = None
+        self.detection_info = None
         
     def detect_motion(self):
         """Detect motion and calculate object position relative to robot."""
@@ -35,7 +37,7 @@ class MotionDetector:
             
         # Convert bytes to numpy array
         nparr = np.frombuffer(frame, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        img = cv2.imdecode(nparr, cv2.COLOR_BGR2GRAY)
         
         # Convert to grayscale and blur
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -65,6 +67,10 @@ class MotionDetector:
                 center_x = x + w//2
                 center_y = y + h//2
                 
+                # Draw rectangle and center point on the image
+                cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                cv2.circle(img, (center_x, center_y), 5, (0, 0, 255), -1)
+                
                 # Calculate relative position from center of frame
                 frame_center_x = img.shape[1] // 2
                 frame_center_y = img.shape[0] // 2
@@ -89,6 +95,18 @@ class MotionDetector:
                     'angle_y': total_angle_y,
                     'distance': distance
                 }
+                
+                # Save detection information
+                _, buffer = cv2.imencode('.jpg', img)
+                self.last_detection_image = buffer.tobytes()
+                self.detection_info = {
+                    'timestamp': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'position': self.object_position,
+                    'object_size': {'width': w, 'height': h},
+                    'center': {'x': center_x, 'y': center_y},
+                    'frame_center': {'x': frame_center_x, 'y': frame_center_y}
+                }
+                
                 self.motion_detected = True
                 return self.object_position
                 
@@ -153,6 +171,18 @@ def perform_movement_sequence():
     time.sleep(0.5)
     safe_look('home')
 
+def initialize_robot():
+    """Initialize robot's legs and camera position."""
+    print("Initializing robot position...")
+    with servo_lock:
+        move.clean_all()  # Reset all servos
+        time.sleep(1)
+        move.init_all()   # Initialize to standing position
+        time.sleep(1)
+        move.look_home()  # Center the camera
+        time.sleep(1)
+    print("Robot initialized.")
+
 def move_to_object(position):
     """Move towards detected object based on calculated position."""
     if not position:
@@ -176,9 +206,9 @@ def move_to_object(position):
             safe_move(4, 35, direction)
             time.sleep(0.1)
     
-    # Move forward for 5 seconds
+    # Move forward for 2 seconds
     start_time = time.time()
-    while time.time() - start_time < 5:
+    while time.time() - start_time < 2:  # Changed from 5 to 2 seconds
         safe_move(1, 35, 'no')
         time.sleep(0.1)
         safe_move(2, 35, 'no')
@@ -195,6 +225,9 @@ def move_to_object(position):
 def main_sequence():
     """Main sequence that runs movement and motion detection sequentially."""
     try:
+        print("Initializing robot...")
+        initialize_robot()
+        
         print("Starting initial movement sequence...")
         perform_movement_sequence()
         print("Movement sequence completed.")
@@ -220,14 +253,50 @@ if __name__ == '__main__':
     try:
         # Start video host (singleton ensures only one instance)
         host = VideoHost(port=5000)
-        host.start()
-        print("Video host started on port 5000")
         
         # Initialize motion detector
         detector = MotionDetector(host)
         
+        # Set detector in video host for status updates
+        host.set_detector(detector)
+        
+        # Start the server
+        host.start()
+        print("Video host started on port 5000")
+        
+        # Update status
+        host.update_status("Server initialized, waiting to start main sequence...")
+        
         # Start main sequence in a separate thread
-        main_thread = threading.Thread(target=main_sequence)
+        def sequence_with_status():
+            try:
+                host.update_status("Initializing robot position...")
+                initialize_robot()
+                
+                host.update_status("Starting movement sequence...")
+                perform_movement_sequence()
+                host.update_status("Movement sequence completed.")
+                
+                time.sleep(2)
+                
+                host.update_status("Starting motion detection...")
+                position = None
+                while not position:
+                    position = detector.detect_motion()
+                    time.sleep(0.1)
+                
+                host.update_status(f"Object detected at position: {position}")
+                move_to_object(position)
+                host.update_status("Movement to object completed. Standing by.")
+                
+            except Exception as e:
+                error_msg = f"Error in main sequence: {e}"
+                print(error_msg)
+                host.update_status(error_msg)
+                with servo_lock:
+                    move.clean_all()
+        
+        main_thread = threading.Thread(target=sequence_with_status)
         main_thread.daemon = True
         main_thread.start()
         
@@ -237,6 +306,7 @@ if __name__ == '__main__':
             
     except KeyboardInterrupt:
         print("\nShutting down...")
+        host.update_status("Shutting down...")
         with servo_lock:
             move.clean_all()
         host.cleanup() 
