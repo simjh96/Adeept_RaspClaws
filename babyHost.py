@@ -497,20 +497,20 @@ class VideoHost:
                                 const statusBox = document.getElementById('processStatus');
                                 let statusText = '';
                                 
-                                // Add status history
+                                // Add status history with escaped newlines
                                 if (data.status_history && data.status_history.length > 0) {
-                                    statusText = data.status_history.join('\n') + '\n\n';
+                                    statusText = data.status_history.join('\\n') + '\\n\\n';
                                 }
                                 
-                                statusText += `Current Status: ${data.status}\n`;
+                                statusText += 'Current Status: ' + data.status + '\\n';
                                 
                                 if (data.movement_info) {
-                                    statusText += `\nMovement Info:\n${data.movement_info.status}\n`;
+                                    statusText += '\\nMovement Info:\\n' + data.movement_info.status + '\\n';
                                     if (data.movement_info.progress) {
-                                        statusText += `Progress: ${data.movement_info.progress}%\n`;
+                                        statusText += 'Progress: ' + data.movement_info.progress + '%\\n';
                                     }
                                     if (data.movement_info.details) {
-                                        statusText += `Details: ${data.movement_info.details}\n`;
+                                        statusText += 'Details: ' + data.movement_info.details + '\\n';
                                     }
                                     
                                     // Update robot position and map
@@ -527,10 +527,10 @@ class VideoHost:
                                 }
                                 
                                 if (data.head_movement_info) {
-                                    statusText += `\nHead Movement:\n`;
-                                    statusText += `Position: X=${data.head_movement_info.x}, Y=${data.head_movement_info.y}\n`;
+                                    statusText += '\\nHead Movement:\\n';
+                                    statusText += 'Position: X=' + data.head_movement_info.x + ', Y=' + data.head_movement_info.y + '\\n';
                                     if (data.head_movement_info.target) {
-                                        statusText += `Target: X=${data.head_movement_info.target.x}, Y=${data.head_movement_info.target.y}\n`;
+                                        statusText += 'Target: X=' + data.head_movement_info.target.x + ', Y=' + data.head_movement_info.target.y + '\\n';
                                     }
                                 }
                                 
