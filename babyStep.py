@@ -37,8 +37,11 @@ class MotionDetector:
             
         # Convert bytes to numpy array
         nparr = np.frombuffer(frame, np.uint8)
-        img = cv2.imdecode(nparr, cv2.COLOR_BGR2GRAY)
-        
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)  # Changed from COLOR_BGR2GRAY
+        if img is None:
+            print("Failed to decode image")
+            return None
+            
         # Convert to grayscale and blur
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         gray = cv2.GaussianBlur(gray, (21, 21), 0)

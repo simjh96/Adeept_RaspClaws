@@ -176,6 +176,18 @@ class VideoHost:
         return Response(self.gen(),
                        mimetype='multipart/x-mixed-replace; boundary=frame')
     
+    def get_frame_safe(self):
+        """Thread-safe method to get a frame."""
+        if not self.init_camera():
+            return None
+            
+        with self.camera_lock:
+            try:
+                return self.camera.get_frame()
+            except Exception as e:
+                print(f"Error getting frame: {e}")
+                return None
+    
     def get_status(self):
         """Get current process status and detection information."""
         if hasattr(self, 'detector'):
