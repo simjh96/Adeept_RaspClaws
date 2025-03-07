@@ -136,20 +136,22 @@ def safe_move(step, speed, direction):
     """Thread-safe wrapper for move commands."""
     with servo_lock:
         move.move(step, speed, direction)
+        time.sleep(0.05)  # Add small delay between servo movements
 
-def safe_look(direction):
-    """Thread-safe wrapper for look commands."""
+def safe_look(direction, steps=None):
+    """Thread-safe wrapper for look commands with step control."""
     with servo_lock:
         if direction == 'up':
-            move.look_up()
+            move.look_up(steps)
         elif direction == 'down':
-            move.look_down()
+            move.look_down(steps)
         elif direction == 'left':
-            move.look_left()
+            move.look_left(steps)
         elif direction == 'right':
-            move.look_right()
+            move.look_right(steps)
         elif direction == 'home':
             move.look_home()
+        time.sleep(0.1)  # Add delay after head movement
 
 def perform_movement_sequence():
     """Perform the predefined movement sequence."""
@@ -243,19 +245,19 @@ def move_to_object(position):
         host.update_movement_info(movement_info)
         
         for step in range(steps):
-            # Check right leg (leg 2) movement
             with servo_lock:
+                # Execute full step sequence atomically
                 move.move(1, 35, direction)
-                time.sleep(0.1)
-                try:
-                    move.move(2, 35, direction)
-                except Exception as e:
-                    print(f"Error moving right leg: {e}")
-                time.sleep(0.1)
+                time.sleep(0.05)
+                move.move(2, 35, direction)
+                time.sleep(0.05)
                 move.move(3, 35, direction)
-                time.sleep(0.1)
+                time.sleep(0.05)
                 move.move(4, 35, direction)
-                time.sleep(0.1)
+                time.sleep(0.05)
+            
+            # Add delay between steps
+            time.sleep(0.1)
             
             # Update progress
             movement_info['status'] = f"Turn progress: {step + 1}/{steps} steps ({((step + 1)/steps * 100):.0f}%)"
@@ -264,24 +266,24 @@ def move_to_object(position):
     # Move forward for exactly 2 seconds
     start_time = time.time()
     step_count = 0
-    total_steps = 20  # 20 steps over 2 seconds
     
     movement_info['status'] = f"Moving forward for {movement_plan['forward']['duration']} seconds"
     host.update_movement_info(movement_info)
     
     while time.time() - start_time < 2:
         with servo_lock:
+            # Execute full step sequence atomically
             move.move(1, 35, 'no')
-            time.sleep(0.1)
-            try:
-                move.move(2, 35, 'no')
-            except Exception as e:
-                print(f"Error moving right leg: {e}")
-            time.sleep(0.1)
+            time.sleep(0.05)
+            move.move(2, 35, 'no')
+            time.sleep(0.05)
             move.move(3, 35, 'no')
-            time.sleep(0.1)
+            time.sleep(0.05)
             move.move(4, 35, 'no')
-            time.sleep(0.1)
+            time.sleep(0.05)
+        
+        # Add delay between steps
+        time.sleep(0.1)
         
         step_count += 1
         progress = min((time.time() - start_time) / 2.0 * 100, 100)
@@ -347,19 +349,13 @@ def sequence_with_status():
                         direction = 'right' if head_movement_info['delta']['x'] > 0 else 'left'
                         steps = abs(head_movement_info['delta']['x'])
                         host.update_status(f"Adjusting head {direction} by {steps} steps...")
-                        if direction == 'right':
-                            move.look_right(steps)
-                        else:
-                            move.look_left(steps)
+                        safe_look(direction, steps)
                     
                     if head_movement_info['delta']['y'] != 0:
                         direction = 'up' if head_movement_info['delta']['y'] > 0 else 'down'
                         steps = abs(head_movement_info['delta']['y'])
                         host.update_status(f"Adjusting head {direction} by {steps} steps...")
-                        if direction == 'up':
-                            move.look_up(steps)
-                        else:
-                            move.look_down(steps)
+                        safe_look(direction, steps)
                     time.sleep(0.5)
             
             # Wait for background model to initialize

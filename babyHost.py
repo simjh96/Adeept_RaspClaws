@@ -401,49 +401,45 @@ class VideoHost:
                             }
                         };
                         
-                        // Add to history array
+                        // Add to history array without removing old entries
                         detectionHistory.unshift(historyItem);
-                        if (detectionHistory.length > MAX_HISTORY) {
-                            detectionHistory.pop();
-                        }
                         
-                        // Update history display
+                        // Update history display by appending new item
                         const container = document.querySelector('.history-grid');
                         if (!container) return;
                         
-                        container.innerHTML = detectionHistory.map((item, index) => `
-                            <div class="history-item">
-                                <div class="history-timestamp">${new Date(item.timestamp).toLocaleTimeString()}</div>
-                                <div class="history-canvas-container">
-                                    <canvas class="history-image" 
-                                            width="320" height="240" 
-                                            data-index="${index}"></canvas>
-                                </div>
-                                <div class="history-info">
-                                    <div class="history-stat">Distance: ${item.info.position.distance.toFixed(2)} units</div>
-                                    <div class="history-stat">Angle X: ${item.info.position.angle_x.toFixed(2)}°</div>
-                                    <div class="history-stat">Angle Y: ${item.info.position.angle_y.toFixed(2)}°</div>
-                                </div>
+                        // Create new history item element
+                        const newItemDiv = document.createElement('div');
+                        newItemDiv.className = 'history-item';
+                        newItemDiv.innerHTML = `
+                            <div class="history-timestamp">${new Date(historyItem.timestamp).toLocaleTimeString()}</div>
+                            <div class="history-canvas-container">
+                                <canvas class="history-image" 
+                                        width="320" height="240" 
+                                        data-index="latest"></canvas>
                             </div>
-                        `).join('');
+                            <div class="history-info">
+                                <div class="history-stat">Distance: ${historyItem.info.position.distance.toFixed(2)} units</div>
+                                <div class="history-stat">Angle X: ${historyItem.info.position.angle_x.toFixed(2)}°</div>
+                                <div class="history-stat">Angle Y: ${historyItem.info.position.angle_y.toFixed(2)}°</div>
+                            </div>
+                        `;
                         
-                        // Draw images and overlays
-                        detectionHistory.forEach((item, index) => {
-                            const canvas = document.querySelector(`canvas[data-index="${index}"]`);
-                            if (canvas) {
-                                const ctx = canvas.getContext('2d');
-                                const img = new Image();
-                                img.onload = () => {
-                                    // Clear canvas
-                                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                                    // Draw image
-                                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                                    // Draw overlay
-                                    drawDetectionOverlay(ctx, item.info, canvas.width, canvas.height);
-                                };
-                                img.src = 'data:image/jpeg;base64,' + item.image;
-                            }
-                        });
+                        // Insert at the beginning
+                        container.insertBefore(newItemDiv, container.firstChild);
+                        
+                        // Draw new image and overlay
+                        const canvas = newItemDiv.querySelector('canvas');
+                        if (canvas) {
+                            const ctx = canvas.getContext('2d');
+                            const img = new Image();
+                            img.onload = () => {
+                                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                                drawDetectionOverlay(ctx, historyItem.info, canvas.width, canvas.height);
+                            };
+                            img.src = 'data:image/jpeg;base64,' + historyItem.image;
+                        }
                     }
 
                     function updateLiveStats(info) {
@@ -512,6 +508,22 @@ class VideoHost:
                             }
 
                             container.innerHTML = html;
+                            
+                            // Add movement info to history
+                            const historyContainer = document.querySelector('.history-grid');
+                            if (historyContainer && info.status.includes('Movement complete')) {
+                                const movementHistoryItem = document.createElement('div');
+                                movementHistoryItem.className = 'history-item';
+                                movementHistoryItem.innerHTML = `
+                                    <div class="history-timestamp">${new Date().toLocaleTimeString()}</div>
+                                    <div class="history-info">
+                                        <div class="history-stat">Movement Complete</div>
+                                        <div class="history-stat">Distance: ${info.initial_position.distance.toFixed(2)} units</div>
+                                        <div class="history-stat">Turn Angle: ${info.initial_position.angle_x.toFixed(2)}°</div>
+                                    </div>
+                                `;
+                                historyContainer.insertBefore(movementHistoryItem, historyContainer.firstChild);
+                            }
                         } else if (data.head_movement_info) {
                             const info = data.head_movement_info;
                             container.innerHTML = `
@@ -526,6 +538,22 @@ class VideoHost:
                                     Change: <span class="movement-highlight">X: ${info.delta.x}, Y: ${info.delta.y}</span>
                                 </div>
                             `;
+                            
+                            // Add head movement to history
+                            const historyContainer = document.querySelector('.history-grid');
+                            if (historyContainer) {
+                                const headHistoryItem = document.createElement('div');
+                                headHistoryItem.className = 'history-item';
+                                headHistoryItem.innerHTML = `
+                                    <div class="history-timestamp">${new Date().toLocaleTimeString()}</div>
+                                    <div class="history-info">
+                                        <div class="history-stat">Head Movement</div>
+                                        <div class="history-stat">X Change: ${info.delta.x}</div>
+                                        <div class="history-stat">Y Change: ${info.delta.y}</div>
+                                    </div>
+                                `;
+                                historyContainer.insertBefore(headHistoryItem, historyContainer.firstChild);
+                            }
                         } else {
                             container.innerHTML = '';
                         }
