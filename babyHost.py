@@ -725,7 +725,9 @@ class VideoHost:
                         ctx.arc(transformX(centerOffsetX), transformY(centerOffsetY), 5, 0, Math.PI * 2);
                         ctx.stroke();
                         
-                        return { ctx, width, height, transformX(centerOffsetX), transformY(centerOffsetY) };
+                        const centerX = transformX(centerOffsetX);
+                        const centerY = transformY(centerOffsetY);
+                        return { ctx, width, height, centerX, centerY };
                     }
                     
                     function updateMap(data) {

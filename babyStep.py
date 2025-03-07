@@ -64,23 +64,24 @@ class MotionDetector:
         # Initialize background model if needed
         if self.avg is None:
             self.avg = gray.copy().astype("float")
+            time.sleep(0.2)  # Reduced from 0.5s to 0.2s for faster initialization
             return None
 
-        # Accumulate weighted average
-        cv2.accumulateWeighted(gray, self.avg, 0.5)
+        # Accumulate weighted average with faster adaptation
+        cv2.accumulateWeighted(gray, self.avg, 0.3)  # Increased from 0.5 to 0.3 for faster updates
         frameDelta = cv2.absdiff(gray, cv2.convertScaleAbs(self.avg))
 
-        # Threshold and dilate
-        thresh = cv2.threshold(frameDelta, 5, 255, cv2.THRESH_BINARY)[1]
+        # Threshold and dilate with lower threshold for faster detection
+        thresh = cv2.threshold(frameDelta, 3, 255, cv2.THRESH_BINARY)[1]  # Reduced threshold from 5 to 3
         thresh = cv2.dilate(thresh, None, iterations=2)
 
         # Find contours
         contours = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
 
-        # Process largest contour
+        # Process largest contour with reduced area threshold
         if len(contours) > 0:
             largest_contour = max(contours, key=cv2.contourArea)
-            if cv2.contourArea(largest_contour) > 5000:  # Min area threshold
+            if cv2.contourArea(largest_contour) > 2000:  # Reduced from 5000 to 2000
                 (x, y, w, h) = cv2.boundingRect(largest_contour)
                 center_x = x + w//2
                 center_y = y + h//2
