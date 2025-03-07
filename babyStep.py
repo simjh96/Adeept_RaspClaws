@@ -218,7 +218,7 @@ def move_to_object(position):
     movement_plan = {
         'turn': {
             'angle': turn_angle,
-            'direction': 'left' if turn_angle > 0 else 'right',
+            'direction': 'right' if turn_angle > 0 else 'left',  # Fix direction logic
             'steps': min(abs(int(turn_angle / 10)), 4)
         },
         'forward': {
@@ -227,12 +227,16 @@ def move_to_object(position):
         }
     }
     
+    # Initialize position tracking
+    current_position = {'x': 0, 'y': 0, 'angle': 0}
+    
     # Log movement plan
     movement_info = {
         'timestamp': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'initial_position': position,
         'movement_plan': movement_plan,
-        'status': 'Calculating movement path...'
+        'status': 'Calculating movement path...',
+        'position': current_position
     }
     host.update_movement_info(movement_info)
     
@@ -259,7 +263,9 @@ def move_to_object(position):
             # Add delay between steps
             time.sleep(0.1)
             
-            # Update progress
+            # Update position and progress
+            current_position['angle'] += (turn_angle/steps) * (1 if direction == 'left' else -1)
+            movement_info['position'] = current_position
             movement_info['status'] = f"Turn progress: {step + 1}/{steps} steps ({((step + 1)/steps * 100):.0f}%)"
             host.update_movement_info(movement_info)
     
@@ -287,6 +293,14 @@ def move_to_object(position):
         
         step_count += 1
         progress = min((time.time() - start_time) / 2.0 * 100, 100)
+        
+        # Update position based on movement
+        angle_rad = math.radians(current_position['angle'])
+        step_distance = distance / 5  # Divide total distance into 5 steps
+        current_position['x'] += step_distance * math.cos(angle_rad)
+        current_position['y'] += step_distance * math.sin(angle_rad)
+        
+        movement_info['position'] = current_position
         movement_info['status'] = f"Forward progress: {progress:.0f}% ({step_count} steps)"
         host.update_movement_info(movement_info)
     
@@ -294,6 +308,7 @@ def move_to_object(position):
     with servo_lock:
         move.stand()
         movement_info['status'] = "Movement complete. Standing by."
+        movement_info['position'] = current_position
         host.update_movement_info(movement_info)
 
 def sequence_with_status():
