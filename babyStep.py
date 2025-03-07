@@ -8,7 +8,6 @@ import datetime
 import cv2
 import numpy as np
 import base64  # Add base64 import
-# from rpi_ws281x import *  # LED control import
 
 # Add server directory to Python path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'server'))
@@ -21,9 +20,6 @@ from robotLight import RobotLight  # Direct import since server is in Python pat
 
 # Global servo lock to prevent competing servo control
 servo_lock = threading.Lock()
-
-# Initialize LED control globally
-# led = LED.LED()  # LED control disabled
 
 class MotionDetector:
     def __init__(self, camera):
@@ -357,16 +353,17 @@ def sequence_with_status():
         last_head_position = None
         head_movement_info = None
         
-        # Turn off LEDs at start
-        # led.colorWipe(Color(0, 0, 0))
-        time.sleep(0.1)
+        # Start with LEDs off
+        RL.both_off()
+        time.sleep(0.1)  # Small delay to ensure LED state
         
         while True:  # Main loop
             try:
-                # Start new detection cycle
-                # led.colorWipe(Color(255, 0, 0))  # Red for scanning
-                
+                # Start new detection cycle with LED
+                RL.red()  # Turn on red LED for scanning
                 host.update_status("Starting detection sequence...")
+                
+                # Reset motion detector for new detection sequence
                 detector.reset_detection()
                 
                 if last_position and last_head_position:
@@ -394,6 +391,7 @@ def sequence_with_status():
                     host.update_status("Moving head to last detected position...")
                     
                     with servo_lock:
+                        # Move head with progress updates and reduced delays
                         if head_movement_info['delta']['x'] != 0:
                             direction = 'right' if head_movement_info['delta']['x'] > 0 else 'left'
                             steps = abs(head_movement_info['delta']['x'])
@@ -405,8 +403,9 @@ def sequence_with_status():
                             steps = abs(head_movement_info['delta']['y'])
                             host.update_status(f"Adjusting head {direction} by {steps} steps...")
                             safe_look(direction, steps)
-                        time.sleep(0.2)
+                        time.sleep(0.2)  # Reduced delay
                 
+                # Minimal delay for background model
                 time.sleep(0.1)
                 
                 position = None
@@ -415,6 +414,7 @@ def sequence_with_status():
                 while not position and not detector.is_moving:
                     position = detector.detect_motion()
                     
+                    # Update status periodically
                     if time.time() - scan_start_time > 1.0:
                         host.update_status("Scanning for movement...")
                         scan_start_time = time.time()
@@ -422,6 +422,7 @@ def sequence_with_status():
                     if position:
                         host.update_status("Motion detected! Moving to target...")
                         
+                        # Store current head position
                         with servo_lock:
                             last_head_position = {
                                 'x': move.Left_Right_input,
@@ -430,24 +431,25 @@ def sequence_with_status():
                         last_position = position
                         
                         # Turn off LED during movement
-                        # led.colorWipe(Color(0, 0, 0))
-                        time.sleep(0.1)
+                        RL.both_off()
+                        time.sleep(0.1)  # Ensure LED state change
                         
+                        # Move towards object
                         move_to_object(position)
                         
                         host.update_status("Movement complete - Starting new scan...")
-                        time.sleep(0.1)
+                        time.sleep(0.1)  # Brief pause before next scan
                         break
                     
-                    time.sleep(0.01)
+                    time.sleep(0.01)  # Minimal delay between scans
                 
-                # Turn off LED between cycles
-                # led.colorWipe(Color(0, 0, 0))
-                time.sleep(0.1)
+                # Ensure LED is off between detection cycles
+                RL.both_off()
+                time.sleep(0.1)  # Ensure LED state change
                 
             except Exception as e:
                 print(f"Error in detection cycle: {e}")
-                # led.colorWipe(Color(0, 0, 0))
+                RL.both_off()  # Ensure LEDs are off on error
                 time.sleep(0.1)
                 continue
             
@@ -455,20 +457,29 @@ def sequence_with_status():
         error_msg = f"Error in main sequence: {e}"
         print(error_msg)
         host.update_status(error_msg)
-        # led.colorWipe(Color(0, 0, 0))
+        RL.both_off()
         with servo_lock:
             move.clean_all()
+    finally:
+        RL.both_off()
+        RL.pause()
 
 if __name__ == '__main__':
     try:
         # Start video host (singleton ensures only one instance)
         host = VideoHost(port=5000, debug=True)
         
+        # Initialize LED control first with proper setup
+        RL = RobotLight()
+        RL.start()
+        time.sleep(0.5)  # Wait for LED initialization
+        RL.both_off()  # Ensure LEDs start off
+        
         # Initialize camera first
         host.update_status("Initializing camera...")
         if not host.init_camera():
             print("Failed to initialize camera. Exiting...")
-            # led.colorWipe(Color(0, 0, 0))
+            RL.both_off()
             sys.exit(1)
             
         print("Camera initialized successfully")
@@ -492,29 +503,28 @@ if __name__ == '__main__':
         main_thread.daemon = True
         main_thread.start()
 
-        # System ready indicator
-        # led.colorWipe(Color(0, 255, 0))  # Green for ready
-        time.sleep(0.2)
-        
+        # Indicate system is ready with green LED
+        RL.green()
+        time.sleep(0.2)  # Ensure LED state change
         host.update_status("System ready - Motion detection active")
         
         # Keep the main thread running
         while True:
             time.sleep(1)
-            # Maintain ready state
-            # led.colorWipe(Color(0, 255, 0))
             
     except KeyboardInterrupt:
         print("\nShutting down...")
         host.update_status("Shutting down...")
         with servo_lock:
             move.clean_all()
-        # led.colorWipe(Color(0, 0, 0))
-        time.sleep(0.1)
+        RL.both_off()
+        time.sleep(0.1)  # Ensure LED state change
         host.cleanup()
     except Exception as e:
         print(f"\nError during startup: {e}")
-        # led.colorWipe(Color(0, 0, 0))
+        if 'RL' in locals():
+            RL.both_off()
+            time.sleep(0.1)  # Ensure LED state change
         if 'host' in locals():
             host.cleanup()
         sys.exit(1) 
