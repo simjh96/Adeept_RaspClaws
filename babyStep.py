@@ -81,7 +81,7 @@ class MotionDetector:
         frameDelta = cv2.absdiff(gray, cv2.convertScaleAbs(self.avg))
 
         # Threshold and dilate
-        thresh = cv2.threshold(frameDelta, 3, 255, cv2.THRESH_BINARY)[1]
+        thresh = cv2.threshold(frameDelta, 5, 255, cv2.THRESH_BINARY)[1]  # Increased threshold for more stable detection
         thresh = cv2.dilate(thresh, None, iterations=2)
 
         # Find contours
@@ -90,60 +90,83 @@ class MotionDetector:
         # Process largest contour
         if len(contours) > 0:
             largest_contour = max(contours, key=cv2.contourArea)
-            if cv2.contourArea(largest_contour) > 1500:  # Reduced area threshold
+            area = cv2.contourArea(largest_contour)
+            
+            # Only process if area is significant (increased threshold)
+            if area > 2500:  # Increased minimum area
                 (x, y, w, h) = cv2.boundingRect(largest_contour)
-                center_x = x + w//2
-                center_y = y + h//2
                 
-                # Draw rectangle and center point on the display image
-                cv2.rectangle(display_img, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                cv2.circle(display_img, (center_x, center_y), 5, (0, 0, 255), -1)
+                # Calculate movement magnitude
+                movement_magnitude = w * h
                 
-                # Calculate relative position from center of frame
-                frame_center_x = display_img.shape[1] // 2
-                frame_center_y = display_img.shape[0] // 2
-                
-                # Draw vector from center to object
-                cv2.line(display_img, 
-                        (frame_center_x, frame_center_y),
-                        (center_x, center_y),
-                        (0, 255, 0), 2)
-                
-                # Calculate angles (assuming 60° FOV for the camera)
-                angle_x = ((center_x - frame_center_x) / frame_center_x) * 30
-                angle_y = ((center_y - frame_center_y) / frame_center_y) * 30
-                
-                # Get current head position
-                head_x = 300  # Default center position
-                head_y = 300  # Default center position
-                
-                # Calculate total angles including head position
-                total_angle_x = angle_x + (head_x - 300) / 10
-                total_angle_y = angle_y + (head_y - 300) / 10
-                
-                # Estimate distance based on object size
-                distance = 1000 / math.sqrt(w * h)
-                
-                self.object_position = {
-                    'angle_x': total_angle_x,
-                    'angle_y': total_angle_y,
-                    'distance': distance
-                }
-                
-                # Save detection information with base64 encoded image
-                _, buffer = cv2.imencode('.jpg', display_img)
-                self.last_detection_image = base64.b64encode(buffer).decode('utf-8')
-                self.detection_info = {
-                    'timestamp': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    'position': self.object_position,
-                    'object_size': {'width': w, 'height': h},
-                    'center': {'x': center_x, 'y': center_y},
-                    'frame_center': {'x': frame_center_x, 'y': frame_center_y}
-                }
-                
-                self.motion_detected = True
-                return self.object_position
-                
+                # Only trigger if movement is significant
+                if movement_magnitude > 10000:  # Added minimum movement threshold
+                    center_x = x + w//2
+                    center_y = y + h//2
+                    
+                    # Draw rectangle and center point
+                    cv2.rectangle(display_img, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                    cv2.circle(display_img, (center_x, center_y), 5, (0, 0, 255), -1)
+                    
+                    # Calculate relative position from center
+                    frame_center_x = display_img.shape[1] // 2
+                    frame_center_y = display_img.shape[0] // 2
+                    
+                    # Draw vector from center to object
+                    cv2.line(display_img, 
+                            (frame_center_x, frame_center_y),
+                            (center_x, center_y),
+                            (0, 255, 0), 2)
+                    
+                    # Calculate angles (assuming 60° FOV)
+                    angle_x = ((center_x - frame_center_x) / frame_center_x) * 30
+                    angle_y = ((center_y - frame_center_y) / frame_center_y) * 30
+                    
+                    # Get current head position
+                    head_x = 300  # Default center position
+                    head_y = 300  # Default center position
+                    
+                    # Calculate total angles including head position
+                    total_angle_x = angle_x + (head_x - 300) / 10
+                    total_angle_y = angle_y + (head_y - 300) / 10
+                    
+                    # Estimate distance based on object size
+                    distance = 1000 / math.sqrt(w * h)
+                    
+                    self.object_position = {
+                        'angle_x': total_angle_x,
+                        'angle_y': total_angle_y,
+                        'distance': distance
+                    }
+                    
+                    # Save detection information
+                    _, buffer = cv2.imencode('.jpg', display_img)
+                    self.last_detection_image = base64.b64encode(buffer).decode('utf-8')
+                    
+                    # Calculate map coordinates
+                    map_x = distance * math.cos(math.radians(total_angle_x))
+                    map_y = distance * math.sin(math.radians(total_angle_x))
+                    
+                    # Add detection point to map
+                    if hasattr(self.camera, 'add_detection_point'):
+                        self.camera.add_detection_point(
+                            map_x, 
+                            map_y, 
+                            datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        )
+                    
+                    self.detection_info = {
+                        'timestamp': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        'position': self.object_position,
+                        'object_size': {'width': w, 'height': h},
+                        'center': {'x': center_x, 'y': center_y},
+                        'frame_center': {'x': frame_center_x, 'y': frame_center_y},
+                        'map_position': {'x': map_x, 'y': map_y}
+                    }
+                    
+                    self.motion_detected = True
+                    return self.object_position
+                    
         return None
 
 def safe_move(step, speed, direction):

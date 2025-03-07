@@ -38,11 +38,13 @@ class VideoHost:
             self.movement_info = None
             self.head_movement_info = None
             self.status_history = []  # Keep track of status history
+            self.detection_points = []  # Store motion detection points
             
             # Register routes
             self.app.route('/')(self.index)
             self.app.route('/video_feed')(self.video_feed)
             self.app.route('/status')(self.get_status)
+            self.app.route('/detection_points')(self.get_detection_points)
             self.app.route('/favicon.ico')(self.favicon)
             self.initialized = True
     
@@ -80,7 +82,7 @@ class VideoHost:
 
     def index(self):
         """Video streaming home page."""
-        video_feed_url = '/video_feed'  # Direct URL instead of template
+        video_feed_url = '/video_feed'
         return """
         <html>
             <head>
@@ -255,43 +257,40 @@ class VideoHost:
                         background: #2a2a2a;
                         padding: 15px;
                         border-radius: 5px;
-                        margin-bottom: 15px;
+                        margin-top: 20px;
+                        position: relative;
                     }
-                    #mapCanvas {
+                    .map-canvas {
                         width: 100%;
                         height: 300px;
                         background: #1a1a1a;
-                        border-radius: 3px;
+                        border: 1px solid #00ff00;
+                        position: relative;
                     }
-                    .status-box {
-                        background: #2a2a2a;
-                        padding: 15px;
+                    .map-legend {
+                        position: absolute;
+                        top: 10px;
+                        right: 10px;
+                        background: rgba(0, 0, 0, 0.7);
+                        padding: 10px;
                         border-radius: 5px;
-                        margin-bottom: 15px;
-                        font-family: monospace;
-                        white-space: pre-wrap;
-                        min-height: 200px;
-                        max-height: 300px;
-                        height: 250px;
-                        overflow-y: auto;
-                        font-size: 14px;
-                        line-height: 1.4;
-                        word-break: break-word;
                     }
-                    .movement-log {
-                        color: #00ff00;
+                    .legend-item {
+                        display: flex;
+                        align-items: center;
                         margin: 5px 0;
-                        padding: 2px 0;
                     }
-                    .head-movement-log {
-                        color: #00ffff;
-                        margin: 5px 0;
-                        padding: 2px 0;
+                    .legend-color {
+                        width: 12px;
+                        height: 12px;
+                        margin-right: 8px;
+                        border-radius: 50%;
                     }
-                    .progress-log {
-                        color: #ffff00;
-                        margin: 5px 0;
-                        padding: 2px 0;
+                    .motion-point {
+                        background: #ff0000;
+                    }
+                    .robot-position {
+                        background: #00ff00;
                     }
                 </style>
                 <script>
@@ -812,6 +811,100 @@ class VideoHost:
                         ctx.font = '12px monospace';
                         ctx.fillText(`Scale: ${(1/mapScale).toFixed(2)} units/pixel`, 10, height - 10);
                     }
+
+                    class DetectionMap {
+                        constructor() {
+                            this.canvas = document.getElementById('mapCanvas');
+                            this.ctx = this.canvas.getContext('2d');
+                            this.points = [];
+                            this.robotPosition = { x: this.canvas.width / 2, y: this.canvas.height / 2 };
+                            this.scale = 1;
+                            
+                            // Set up canvas size
+                            this.resizeCanvas();
+                            window.addEventListener('resize', () => this.resizeCanvas());
+                            
+                            // Start update loop
+                            this.updatePoints();
+                        }
+                        
+                        resizeCanvas() {
+                            const container = this.canvas.parentElement;
+                            this.canvas.width = container.clientWidth;
+                            this.canvas.height = container.clientHeight;
+                            this.draw();
+                        }
+                        
+                        async updatePoints() {
+                            try {
+                                const response = await fetch('/detection_points');
+                                const points = await response.json();
+                                this.points = points;
+                                this.draw();
+                            } catch (error) {
+                                console.error('Error fetching detection points:', error);
+                            }
+                            setTimeout(() => this.updatePoints(), 1000);
+                        }
+                        
+                        draw() {
+                            const ctx = this.ctx;
+                            ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                            
+                            // Draw grid
+                            ctx.strokeStyle = '#333333';
+                            ctx.lineWidth = 1;
+                            const gridSize = 50;
+                            
+                            for (let x = 0; x < this.canvas.width; x += gridSize) {
+                                ctx.beginPath();
+                                ctx.moveTo(x, 0);
+                                ctx.lineTo(x, this.canvas.height);
+                                ctx.stroke();
+                            }
+                            
+                            for (let y = 0; y < this.canvas.height; y += gridSize) {
+                                ctx.beginPath();
+                                ctx.moveTo(0, y);
+                                ctx.lineTo(this.canvas.width, y);
+                                ctx.stroke();
+                            }
+                            
+                            // Draw robot position
+                            ctx.fillStyle = '#00ff00';
+                            ctx.beginPath();
+                            ctx.arc(this.robotPosition.x, this.robotPosition.y, 8, 0, Math.PI * 2);
+                            ctx.fill();
+                            
+                            // Draw detection points
+                            this.points.forEach((point, index) => {
+                                const alpha = Math.max(0.2, 1 - (this.points.length - index) / this.points.length);
+                                ctx.fillStyle = `rgba(255, 0, 0, ${alpha})`;
+                                ctx.beginPath();
+                                ctx.arc(point.x * this.scale + this.canvas.width/2, 
+                                      point.y * this.scale + this.canvas.height/2, 
+                                      5, 0, Math.PI * 2);
+                                ctx.fill();
+                                
+                                // Draw connecting line to previous point
+                                if (index > 0) {
+                                    const prevPoint = this.points[index - 1];
+                                    ctx.strokeStyle = `rgba(255, 0, 0, ${alpha * 0.5})`;
+                                    ctx.beginPath();
+                                    ctx.moveTo(prevPoint.x * this.scale + this.canvas.width/2, 
+                                             prevPoint.y * this.scale + this.canvas.height/2);
+                                    ctx.lineTo(point.x * this.scale + this.canvas.width/2, 
+                                             point.y * this.scale + this.canvas.height/2);
+                                    ctx.stroke();
+                                }
+                            });
+                        }
+                    }
+                    
+                    // Initialize map when page loads
+                    window.addEventListener('load', () => {
+                        const map = new DetectionMap();
+                    });
                 </script>
             </head>
             <body>
@@ -820,7 +913,12 @@ class VideoHost:
                         <div class="video-wrapper">
                             <img class="video-feed" src="/video_feed">
                             <canvas id="videoOverlay"></canvas>
-                            <div class="stats-overlay"></div>
+                            <div class="stats-overlay">
+                                <div class="stat-row">
+                                    <span class="stat-label">Status:</span>
+                                    <span class="stat-value" id="statusText">Initializing...</span>
+                                </div>
+                            </div>
                             <div class="compass-container">
                                 <div class="compass">
                                     <div class="compass-arrow"></div>
@@ -833,18 +931,31 @@ class VideoHost:
                                 </div>
                             </div>
                         </div>
-                    </div>
-                    
-                    <div class="detection-section">
-                        <div id="processStatus" class="status-box">Initializing...</div>
                         <div class="map-section">
-                            <canvas id="mapCanvas"></canvas>
+                            <h3>Detection Map</h3>
+                            <div class="map-canvas">
+                                <canvas id="mapCanvas"></canvas>
+                                <div class="map-legend">
+                                    <div class="legend-item">
+                                        <div class="legend-color motion-point"></div>
+                                        <span>Motion Detection</span>
+                                    </div>
+                                    <div class="legend-item">
+                                        <div class="legend-color robot-position"></div>
+                                        <span>Robot Position</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="detection-section">
+                        <div class="main-detection">
+                            <img id="mainDetectionImage">
+                            <span id="detectionTimestamp"></span>
                         </div>
                         <div class="history-section">
                             <div class="history-title">Detection History</div>
-                            <div class="history-grid">
-                                <!-- Detection history will be populated here -->
-                            </div>
+                            <div class="history-grid" id="historyGrid"></div>
                         </div>
                     </div>
                 </div>
@@ -988,6 +1099,23 @@ class VideoHost:
     def favicon(self):
         """Return a transparent favicon to prevent 404 errors."""
         return Response(status=204)
+
+    def add_detection_point(self, x, y, timestamp, type="motion"):
+        """Add a new detection point to the map"""
+        point = {
+            'x': x,
+            'y': y,
+            'timestamp': timestamp,
+            'type': type
+        }
+        self.detection_points.append(point)
+        # Keep only last 50 points
+        if len(self.detection_points) > 50:
+            self.detection_points.pop(0)
+    
+    def get_detection_points(self):
+        """API endpoint to get detection points"""
+        return jsonify(self.detection_points)
 
 if __name__ == '__main__':
     # Test the video host independently
