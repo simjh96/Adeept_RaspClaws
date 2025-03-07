@@ -251,11 +251,54 @@ class VideoHost:
                     const MAX_HISTORY = 5;
                     let lastFrameCenter = null;
                     let lastObjectCenter = null;
+                    let scanAngle = 0;
+
+                    function drawScanningEffect(ctx, width, height) {
+                        // Scanning line effect
+                        ctx.save();
+                        ctx.strokeStyle = 'rgba(0, 255, 0, 0.5)';
+                        ctx.lineWidth = 2;
+                        ctx.translate(width / 2, height / 2);
+                        ctx.rotate(scanAngle);
+                        ctx.beginPath();
+                        ctx.moveTo(0, -height);
+                        ctx.lineTo(0, height);
+                        ctx.stroke();
+                        ctx.restore();
+                        
+                        // Update scan angle
+                        scanAngle += 0.05;
+                        if (scanAngle > Math.PI * 2) {
+                            scanAngle = 0;
+                        }
+                        
+                        // Draw targeting grid
+                        ctx.strokeStyle = 'rgba(0, 255, 0, 0.2)';
+                        ctx.lineWidth = 1;
+                        
+                        // Horizontal lines
+                        for (let i = 0; i < height; i += height/10) {
+                            ctx.beginPath();
+                            ctx.moveTo(0, i);
+                            ctx.lineTo(width, i);
+                            ctx.stroke();
+                        }
+                        
+                        // Vertical lines
+                        for (let i = 0; i < width; i += width/10) {
+                            ctx.beginPath();
+                            ctx.moveTo(i, 0);
+                            ctx.lineTo(i, height);
+                            ctx.stroke();
+                        }
+                    }
 
                     function updateOverlay(data) {
                         const wrapper = document.querySelector('.video-wrapper');
                         const video = document.querySelector('.video-feed');
                         const canvas = document.getElementById('videoOverlay');
+                        
+                        if (!canvas || !video) return;
                         
                         // Match canvas size to video
                         canvas.width = video.offsetWidth;
@@ -270,6 +313,9 @@ class VideoHost:
                         if (data.detection_info) {
                             drawDetectionOverlay(ctx, data.detection_info, canvas.width, canvas.height);
                         }
+                        
+                        // Request next animation frame
+                        requestAnimationFrame(() => updateOverlay(data));
                     }
                     
                     function drawDetectionOverlay(ctx, info, width, height) {
@@ -438,32 +484,19 @@ class VideoHost:
                             .then(data => {
                                 document.getElementById('processStatus').innerText = data.status;
                                 
-                                if (data.detection_info) {
+                                if (data.detection_info && data.last_detection_image) {
                                     // Update live overlay
-                                    updateOverlay(data);
-                                    updateLiveStats(data.detection_info);
+                                    const detection = {
+                                        image: data.last_detection_image,
+                                        info: data.detection_info
+                                    };
                                     
-                                    if (data.last_detection_image) {
-                                        const detection = {
-                                            image: data.last_detection_image,
-                                            info: data.detection_info
-                                        };
-                                        
-                                        // Only add to history if it's a new detection
-                                        const lastDetection = detectionHistory[0];
-                                        if (!lastDetection || 
-                                            lastDetection.info.timestamp !== detection.info.timestamp) {
-                                            console.log("New detection added to history");
-                                            updateDetectionHistory(detection);
-                                        }
-                                    }
-                                } else {
-                                    // Clear live overlay but keep scanning effect
-                                    const canvas = document.getElementById('videoOverlay');
-                                    if (canvas) {
-                                        const ctx = canvas.getContext('2d');
-                                        ctx.clearRect(0, 0, canvas.width, canvas.height);
-                                        drawScanningEffect(ctx, canvas.width, canvas.height);
+                                    // Only add to history if it's a new detection
+                                    const lastDetection = detectionHistory[0];
+                                    if (!lastDetection || 
+                                        lastDetection.info.timestamp !== detection.info.timestamp) {
+                                        console.log("New detection added to history");
+                                        updateDetectionHistory(detection);
                                     }
                                 }
                             })
@@ -472,24 +505,46 @@ class VideoHost:
                             });
                     }
                     
-                    // Update status every 100ms for smoother animation
-                    setInterval(updateStatus, 100);
+                    // Start animation loop
+                    let lastData = { detection_info: null };
+                    function animate() {
+                        const canvas = document.getElementById('videoOverlay');
+                        if (canvas) {
+                            const ctx = canvas.getContext('2d');
+                            ctx.clearRect(0, 0, canvas.width, canvas.height);
+                            drawScanningEffect(ctx, canvas.width, canvas.height);
+                            if (lastData.detection_info) {
+                                drawDetectionOverlay(ctx, lastData.detection_info, canvas.width, canvas.height);
+                            }
+                        }
+                        requestAnimationFrame(animate);
+                    }
                     
-                    // Initialize video overlay when page loads
+                    // Start animation when page loads
                     window.onload = function() {
                         const video = document.querySelector('.video-feed');
                         const canvas = document.getElementById('videoOverlay');
                         
                         function resizeOverlay() {
-                            canvas.width = video.offsetWidth;
-                            canvas.height = video.offsetHeight;
+                            if (canvas && video) {
+                                canvas.width = video.offsetWidth;
+                                canvas.height = video.offsetHeight;
+                            }
                         }
                         
                         // Resize overlay when video size changes
-                        new ResizeObserver(resizeOverlay).observe(video);
+                        if (video) {
+                            new ResizeObserver(resizeOverlay).observe(video);
+                        }
                         
                         // Initial resize
                         resizeOverlay();
+                        
+                        // Start animation loop
+                        animate();
+                        
+                        // Update status every 100ms
+                        setInterval(updateStatus, 100);
                     }
                 </script>
             </head>
