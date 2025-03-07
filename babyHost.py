@@ -672,7 +672,11 @@ class VideoHost:
                         const centerOffsetX = (bounds.maxX + bounds.minX) / 2;
                         const centerOffsetY = (bounds.maxY + bounds.minY) / 2;
                         
-                        // Transform coordinates function
+                        // Calculate center coordinates first
+                        const centerX = width / 2;
+                        const centerY = height / 2;
+                        
+                        // Create transform functions with closure over centerX/Y
                         const transformX = x => centerX + (x - centerOffsetX) * mapScale;
                         const transformY = y => centerY - (y - centerOffsetY) * mapScale;
                         
@@ -725,34 +729,14 @@ class VideoHost:
                         ctx.arc(transformX(centerOffsetX), transformY(centerOffsetY), 5, 0, Math.PI * 2);
                         ctx.stroke();
                         
-                        const centerX = transformX(centerOffsetX);
-                        const centerY = transformY(centerOffsetY);
-                        return { ctx, width, height, centerX, centerY };
+                        return { ctx, width, height, centerX, centerY, transformX, transformY };
                     }
                     
                     function updateMap(data) {
                         const canvas = document.getElementById('mapCanvas');
                         if (!canvas) return;
                         
-                        const { ctx, width, height, centerX, centerY } = initMap();
-                        
-                        // Calculate bounds and scale
-                        const bounds = calculateMapBounds();
-                        const contentWidth = bounds.maxX - bounds.minX;
-                        const contentHeight = bounds.maxY - bounds.minY;
-                        
-                        // Calculate scale to fit content with padding
-                        const scaleX = (width - mapPadding * 2) / contentWidth;
-                        const scaleY = (height - mapPadding * 2) / contentHeight;
-                        mapScale = Math.min(scaleX, scaleY);
-                        
-                        // Calculate center offset to position content
-                        const centerOffsetX = (bounds.maxX + bounds.minX) / 2;
-                        const centerOffsetY = (bounds.maxY + bounds.minY) / 2;
-                        
-                        // Transform coordinates function
-                        const transformX = x => centerX + (x - centerOffsetX) * mapScale;
-                        const transformY = y => centerY - (y - centerOffsetY) * mapScale;
+                        const { ctx, width, height, centerX, centerY, transformX, transformY } = initMap();
                         
                         // Draw path history
                         if (pathHistory.length > 0) {

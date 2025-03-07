@@ -327,10 +327,6 @@ def move_to_object(position):
     detector.detection_info = None
 
 def sequence_with_status():
-    # Initialize LED control
-    RL = RobotLight()
-    RL.start()
-    
     try:
         host.update_status("Initializing robot position...")
         initialize_robot()
@@ -342,9 +338,6 @@ def sequence_with_status():
         
         while True:  # Main loop
             host.update_status("Starting detection sequence...")
-            
-            # Turn off all LEDs at start
-            RL.both_off()
             
             # Detection mode - Red LED
             RL.red()
@@ -439,14 +432,22 @@ if __name__ == '__main__':
         # Start video host (singleton ensures only one instance)
         host = VideoHost(port=5000, debug=True)
         
+        # Initialize LED control first
+        RL = RobotLight()
+        RL.start()
+        RL.both_off()  # Start with LEDs off
+        
         # Initialize camera first
+        host.update_status("Initializing camera...")
         if not host.init_camera():
             print("Failed to initialize camera. Exiting...")
+            RL.both_off()
             sys.exit(1)
             
         print("Camera initialized successfully")
         
         # Initialize motion detector with the camera instance
+        host.update_status("Initializing motion detector...")
         detector = MotionDetector(host)
         
         # Set detector in video host for status updates
@@ -457,12 +458,16 @@ if __name__ == '__main__':
         print("Video host started on port 5000")
         
         # Update status
-        host.update_status("Server initialized, waiting to start main sequence...")
+        host.update_status("Server initialized, starting main sequence...")
         
         # Start main sequence in a separate thread
         main_thread = threading.Thread(target=sequence_with_status)
         main_thread.daemon = True
         main_thread.start()
+
+        # Indicate system is ready with green LED
+        RL.green()
+        host.update_status("System ready - Motion detection active")
         
         # Keep the main thread running
         while True:
@@ -473,9 +478,12 @@ if __name__ == '__main__':
         host.update_status("Shutting down...")
         with servo_lock:
             move.clean_all()
+        RL.both_off()
         host.cleanup()
     except Exception as e:
         print(f"\nError during startup: {e}")
+        if 'RL' in locals():
+            RL.both_off()
         if 'host' in locals():
             host.cleanup()
         sys.exit(1) 
