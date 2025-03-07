@@ -26,16 +26,18 @@ class VideoHost:
                     cls._instance = super(VideoHost, cls).__new__(cls)
         return cls._instance
     
-    def __init__(self, port=5000):
+    def __init__(self, port=5000, debug=True):
         if not hasattr(self, 'initialized'):
             self.app = Flask(__name__)
             CORS(self.app, supports_credentials=True)
             self.camera = None
             self.port = port
+            self.debug = debug
             self.camera_lock = threading.Lock()
             self.current_status = "Initializing..."
             self.movement_info = None
             self.head_movement_info = None
+            self.status_history = []  # Keep track of status history
             
             # Register routes
             self.app.route('/')(self.index)
@@ -493,7 +495,14 @@ class VideoHost:
                             .then(response => response.json())
                             .then(data => {
                                 const statusBox = document.getElementById('processStatus');
-                                let statusText = `Status: ${data.status}\n`;
+                                let statusText = '';
+                                
+                                // Add status history
+                                if (data.status_history && data.status_history.length > 0) {
+                                    statusText = data.status_history.join('\n') + '\n\n';
+                                }
+                                
+                                statusText += `Current Status: ${data.status}\n`;
                                 
                                 if (data.movement_info) {
                                     statusText += `\nMovement Info:\n${data.movement_info.status}\n`;
@@ -502,6 +511,18 @@ class VideoHost:
                                     }
                                     if (data.movement_info.details) {
                                         statusText += `Details: ${data.movement_info.details}\n`;
+                                    }
+                                    
+                                    // Update robot position and map
+                                    if (data.movement_info.position) {
+                                        const newPos = data.movement_info.position;
+                                        if (robotPosition.x !== newPos.x || 
+                                            robotPosition.y !== newPos.y || 
+                                            robotPosition.angle !== newPos.angle) {
+                                            robotPosition = {...newPos};
+                                            pathHistory.push({...newPos});
+                                            updateMap(data);
+                                        }
                                     }
                                 }
                                 
@@ -529,13 +550,6 @@ class VideoHost:
                                         console.log("New detection added to history");
                                         updateDetectionHistory(detection);
                                     }
-                                }
-                                
-                                // Update map with movement info
-                                if (data.movement_info && data.movement_info.position) {
-                                    robotPosition = data.movement_info.position;
-                                    pathHistory.push({...robotPosition});
-                                    updateMap(data);
                                 }
                             })
                             .catch(error => {
@@ -860,7 +874,8 @@ class VideoHost:
             'detection_info': None,
             'last_detection_image': None,
             'movement_info': self.movement_info,
-            'head_movement_info': self.head_movement_info
+            'head_movement_info': self.head_movement_info,
+            'status_history': self.status_history[-10:]  # Last 10 status updates
         }
         
         if self.detector:
@@ -876,6 +891,10 @@ class VideoHost:
         
     def update_status(self, status):
         """Update the current process status."""
+        if self.debug:
+            print(f"Status Update: {status}")
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.status_history.append(f"[{timestamp}] {status}")
         self.current_status = status
 
     def update_movement_info(self, info):
@@ -893,6 +912,9 @@ class VideoHost:
         if 'details' not in info:
             info['details'] = None
             
+        if self.debug:
+            print(f"Movement Update: {info}")
+            
         self.movement_info = info
         self.update_status(info['status'])
 
@@ -909,22 +931,23 @@ class VideoHost:
         if 'target' not in info:
             info['target'] = None
             
+        if self.debug:
+            print(f"Head Movement Update: {info}")
+            
         self.head_movement_info = info
         self.update_status(info['status'])
 
     def start(self):
         """Start the video hosting server in a separate thread."""
-        # Add status route
-        @self.app.route('/status')
-        def get_status_route():
-            status_data = self.get_status()
-            return Response(
-                json.dumps(status_data),
-                mimetype='application/json'
-            )
-        
         def run_server():
-            self.app.run(host='0.0.0.0', port=self.port, threaded=True)
+            self.app.run(
+                host='0.0.0.0',
+                port=self.port,
+                threaded=True,
+                debug=self.debug,
+                use_reloader=False,  # Disable reloader in debug mode
+                log_level='ERROR'  # Suppress most Flask logging
+            )
             
         self.server_thread = threading.Thread(target=run_server)
         self.server_thread.daemon = True

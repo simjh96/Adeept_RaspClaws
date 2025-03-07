@@ -421,6 +421,9 @@ class Camera(BaseCamera):
 			if img.all is None:
 				continue
 
+			# Convert BGR to RGB
+			img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
 			if Camera.modeSelect == 'none':
 				switch.switch(1,0)
 				cvt.pause()
@@ -434,8 +437,6 @@ class Camera(BaseCamera):
 					img = cvt.elementDraw(img)
 				except:
 					pass
-			
-
 
 			# encode as a jpeg image and return it
 			if cv2.imencode('.jpg', img)[0]:
