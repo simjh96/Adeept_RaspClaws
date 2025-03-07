@@ -270,20 +270,28 @@ class VideoHost:
                         margin-bottom: 15px;
                         font-family: monospace;
                         white-space: pre-wrap;
-                        max-height: 200px;
+                        min-height: 200px;
+                        max-height: 300px;
+                        height: 250px;
                         overflow-y: auto;
+                        font-size: 14px;
+                        line-height: 1.4;
+                        word-break: break-word;
                     }
                     .movement-log {
                         color: #00ff00;
                         margin: 5px 0;
+                        padding: 2px 0;
                     }
                     .head-movement-log {
                         color: #00ffff;
                         margin: 5px 0;
+                        padding: 2px 0;
                     }
                     .progress-log {
                         color: #ffff00;
                         margin: 5px 0;
+                        padding: 2px 0;
                     }
                 </style>
                 <script>

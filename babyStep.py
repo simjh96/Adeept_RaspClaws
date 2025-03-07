@@ -336,11 +336,12 @@ def sequence_with_status():
         last_head_position = None
         head_movement_info = None
         
+        # Ensure LEDs are off at start
+        RL.both_off()
+        time.sleep(0.1)
+        
         while True:  # Main loop
             host.update_status("Starting detection sequence...")
-            
-            # Detection mode - Red LED
-            RL.red()
             
             # Reset motion detector for new detection sequence
             detector.reset_detection()
@@ -388,8 +389,19 @@ def sequence_with_status():
             # Reduced delay for background model initialization
             time.sleep(0.5)
             
+            # Start detection mode with red LED
+            RL.red()
+            host.update_status("Motion detection active - Scanning for movement...")
+            
             position = None
+            detection_start_time = time.time()
+            
             while not position and not detector.is_moving:  # Only detect when not moving
+                # Blink red LED during detection
+                if time.time() - detection_start_time > 1.0:  # Blink every second
+                    RL.red()
+                    detection_start_time = time.time()
+                
                 position = detector.detect_motion()
                 if position:
                     host.update_status("Motion detected! Moving to target...")
@@ -408,11 +420,12 @@ def sequence_with_status():
                     # Move towards object
                     move_to_object(position)
                     
-                    # Turn off LEDs after sequence
-                    RL.both_off()
+                    # Return to detection mode
+                    RL.red()
+                    host.update_status("Movement complete - Resuming detection...")
                     
-                    # Reduced delay before next detection
-                    time.sleep(0.5)
+                    # Short delay before next detection
+                    time.sleep(0.2)
                     break
                 
                 time.sleep(0.05)  # Reduced delay between detection attempts
@@ -425,6 +438,7 @@ def sequence_with_status():
         with servo_lock:
             move.clean_all()
     finally:
+        RL.both_off()  # Ensure LEDs are off when exiting
         RL.pause()  # Clean up LED thread
 
 if __name__ == '__main__':
