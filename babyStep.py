@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-from importlib import import_module
 import os
+import sys
 import time
 import threading
 from flask import Flask, render_template, Response
 from flask_cors import CORS
 import cv2
+
+# Add server directory to Python path
+sys.path.append(os.path.join(os.path.dirname(__file__), 'server'))
+
+# Import server modules
 import move
 import LED
 from camera_opencv import Camera
