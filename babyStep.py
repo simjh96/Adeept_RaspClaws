@@ -16,7 +16,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'server'))
 import move
 import LED
 from babyHost import VideoHost
-from server.robotLight import RobotLight
+from robotLight import RobotLight
 
 # Global servo lock to prevent competing servo control
 servo_lock = threading.Lock()
