@@ -8,6 +8,7 @@ import datetime
 import cv2
 import numpy as np
 import base64  # Add base64 import
+from rpi_ws281x import *  # Add this import for Color
 
 # Add server directory to Python path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'server'))
@@ -20,6 +21,9 @@ from robotLight import RobotLight  # Direct import since server is in Python pat
 
 # Global servo lock to prevent competing servo control
 servo_lock = threading.Lock()
+
+# Initialize LED control globally
+led = LED.LED()  # Use LED class directly like webServer.py does
 
 class MotionDetector:
     def __init__(self, camera):
@@ -355,7 +359,7 @@ def sequence_with_status():
         
         print("[LED DEBUG] Attempting to turn off LEDs at start...")
         try:
-            RL.both_off()
+            led.colorWipe(Color(0, 0, 0))  # Turn off LEDs using colorWipe
             print("[LED DEBUG] Successfully turned off LEDs")
         except Exception as e:
             print(f"[LED DEBUG] Error turning off LEDs: {e}")
@@ -366,7 +370,7 @@ def sequence_with_status():
                 # Start new detection cycle with LED
                 print("[LED DEBUG] Attempting to turn on RED LED for scanning...")
                 try:
-                    RL.red()
+                    led.colorWipe(Color(255, 0, 0))  # Red color
                     print("[LED DEBUG] Successfully turned on RED LED")
                 except Exception as e:
                     print(f"[LED DEBUG] Error turning on RED LED: {e}")
@@ -445,7 +449,7 @@ def sequence_with_status():
                         # Turn off LED during movement
                         print("[LED DEBUG] Motion detected - Turning off LEDs...")
                         try:
-                            RL.both_off()
+                            led.colorWipe(Color(0, 0, 0))  # Turn off LEDs
                             print("[LED DEBUG] Successfully turned off LEDs for movement")
                         except Exception as e:
                             print(f"[LED DEBUG] Error turning off LEDs for movement: {e}")
@@ -463,7 +467,7 @@ def sequence_with_status():
                 # Ensure LED is off between detection cycles
                 print("[LED DEBUG] Turning off LEDs between cycles...")
                 try:
-                    RL.both_off()
+                    led.colorWipe(Color(0, 0, 0))  # Turn off LEDs
                     print("[LED DEBUG] Successfully turned off LEDs between cycles")
                 except Exception as e:
                     print(f"[LED DEBUG] Error turning off LEDs between cycles: {e}")
@@ -472,7 +476,7 @@ def sequence_with_status():
             except Exception as e:
                 print(f"[LED DEBUG] Error in detection cycle: {e}")
                 try:
-                    RL.both_off()
+                    led.colorWipe(Color(0, 0, 0))  # Turn off LEDs
                     print("[LED DEBUG] Successfully turned off LEDs after error")
                 except Exception as led_error:
                     print(f"[LED DEBUG] Error turning off LEDs after error: {led_error}")
@@ -485,7 +489,7 @@ def sequence_with_status():
         host.update_status(error_msg)
         print("[LED DEBUG] Turning off LEDs after main sequence error...")
         try:
-            RL.both_off()
+            led.colorWipe(Color(0, 0, 0))  # Turn off LEDs
             print("[LED DEBUG] Successfully turned off LEDs after main sequence error")
         except Exception as led_error:
             print(f"[LED DEBUG] Error turning off LEDs after main sequence error: {led_error}")
@@ -495,12 +499,12 @@ def sequence_with_status():
     finally:
         print("[LED DEBUG] Turning off LEDs after main sequence...")
         try:
-            RL.both_off()
+            led.colorWipe(Color(0, 0, 0))  # Turn off LEDs
             print("[LED DEBUG] Successfully turned off LEDs after main sequence")
         except Exception as e:
             print(f"[LED DEBUG] Error turning off LEDs after main sequence: {e}")
         time.sleep(0.1)
-        RL.pause()
+        led.pause()
 
 if __name__ == '__main__':
     try:
@@ -514,41 +518,30 @@ if __name__ == '__main__':
         # Start video host (singleton ensures only one instance)
         host = VideoHost(port=5000, debug=True)
         
-        # Initialize LED control first with proper setup
-        print("[LED DEBUG] Creating RobotLight instance...")
+        # Test LED functionality
+        print("[LED DEBUG] Testing LED control...")
         try:
-            RL = RobotLight()
-            print("[LED DEBUG] Successfully created RobotLight instance")
-            
-            print("[LED DEBUG] Starting RobotLight thread...")
-            RL.start()
-            print("[LED DEBUG] Successfully started RobotLight thread")
-            
-            # Test LED functionality
-            print("[LED DEBUG] Testing LED control...")
-            RL.both_off()
+            led.colorWipe(Color(0, 0, 0))    # Off
             time.sleep(0.2)
-            RL.red()
+            led.colorWipe(Color(255, 0, 0))  # Red
             time.sleep(0.2)
-            RL.green()
+            led.colorWipe(Color(0, 255, 0))  # Green
             time.sleep(0.2)
-            RL.blue()
+            led.colorWipe(Color(0, 0, 255))  # Blue
             time.sleep(0.2)
-            RL.both_off()
+            led.colorWipe(Color(0, 0, 0))    # Off
             print("[LED DEBUG] LED test complete")
-            
         except Exception as e:
-            print(f"[LED DEBUG] Error during LED initialization: {e}")
+            print(f"[LED DEBUG] Error during LED test: {e}")
             print("[LED DEBUG] Make sure you have permissions to access GPIO")
             print("[LED DEBUG] Try: sudo pip3 install rpi_ws281x")
-            raise
         
         # Initialize camera first
         host.update_status("Initializing camera...")
         if not host.init_camera():
             print("[LED DEBUG] Camera initialization failed, turning off LEDs...")
             try:
-                RL.both_off()
+                led.colorWipe(Color(0, 0, 0))  # Turn off LEDs
                 print("[LED DEBUG] Successfully turned off LEDs after camera init failure")
             except Exception as e:
                 print(f"[LED DEBUG] Error turning off LEDs after camera init failure: {e}")
@@ -578,9 +571,7 @@ if __name__ == '__main__':
         # Indicate system is ready with green LED
         print("[LED DEBUG] Setting GREEN LED for ready state...")
         try:
-            RL.both_off()  # Clear any previous state
-            time.sleep(0.1)
-            RL.green()
+            led.colorWipe(Color(0, 255, 0))  # Green color
             print("[LED DEBUG] Successfully set GREEN LED")
         except Exception as e:
             print(f"[LED DEBUG] Error setting GREEN LED: {e}")
@@ -593,9 +584,8 @@ if __name__ == '__main__':
         while True:
             time.sleep(1)
             try:
-                # Verify LED state periodically
-                if 'RL' in locals():
-                    RL.green()  # Maintain green LED in main state
+                # Maintain green LED in main state
+                led.colorWipe(Color(0, 255, 0))  # Keep green LED on
             except Exception as e:
                 print(f"[LED DEBUG] Error maintaining LED state: {e}")
             
@@ -606,23 +596,19 @@ if __name__ == '__main__':
             move.clean_all()
         print("[LED DEBUG] Turning off LEDs during shutdown...")
         try:
-            if 'RL' in locals():
-                RL.both_off()
-                print("[LED DEBUG] Successfully turned off LEDs during shutdown")
+            led.colorWipe(Color(0, 0, 0))  # Turn off LEDs
+            print("[LED DEBUG] Successfully turned off LEDs during shutdown")
         except Exception as e:
             print(f"[LED DEBUG] Error turning off LEDs during shutdown: {e}")
         time.sleep(0.1)
         host.cleanup()
     except Exception as e:
         print(f"\nError during startup: {e}")
-        if 'RL' in locals():
-            print("[LED DEBUG] Turning off LEDs after startup error...")
-            try:
-                RL.both_off()
-                print("[LED DEBUG] Successfully turned off LEDs after startup error")
-            except Exception as led_error:
-                print(f"[LED DEBUG] Error turning off LEDs after startup error: {led_error}")
-            time.sleep(0.1)
+        try:
+            led.colorWipe(Color(0, 0, 0))  # Turn off LEDs
+            print("[LED DEBUG] Successfully turned off LEDs after startup error")
+        except Exception as led_error:
+            print(f"[LED DEBUG] Error turning off LEDs after startup error: {led_error}")
         if 'host' in locals():
             host.cleanup()
         sys.exit(1) 
