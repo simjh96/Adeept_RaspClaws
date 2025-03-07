@@ -258,7 +258,7 @@ def move_to_object(position):
     movement_plan = {
         'turn': {
             'angle': turn_angle,
-            'direction': 'right' if turn_angle > 0 else 'left',
+            'direction': 'left' if turn_angle > 0 else 'right',
             'steps': min(abs(int(turn_angle / 10)), 4)
         },
         'forward': {
@@ -304,7 +304,7 @@ def move_to_object(position):
             time.sleep(0.05)
             
             # Update position and progress
-            current_position['angle'] += (turn_angle/steps) * (1 if direction == 'left' else -1)
+            current_position['angle'] += (turn_angle/steps)
             movement_info['position'] = current_position
             movement_info['status'] = f"Turn progress: {step + 1}/{steps} steps ({((step + 1)/steps * 100):.0f}%)"
             host.update_movement_info(movement_info)
