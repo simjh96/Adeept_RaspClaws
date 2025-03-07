@@ -353,14 +353,24 @@ def sequence_with_status():
         last_head_position = None
         head_movement_info = None
         
-        # Start with LEDs off
-        RL.both_off()
-        time.sleep(0.1)  # Small delay to ensure LED state
+        print("[LED DEBUG] Attempting to turn off LEDs at start...")
+        try:
+            RL.both_off()
+            print("[LED DEBUG] Successfully turned off LEDs")
+        except Exception as e:
+            print(f"[LED DEBUG] Error turning off LEDs: {e}")
+        time.sleep(0.1)
         
         while True:  # Main loop
             try:
                 # Start new detection cycle with LED
-                RL.red()  # Turn on red LED for scanning
+                print("[LED DEBUG] Attempting to turn on RED LED for scanning...")
+                try:
+                    RL.red()
+                    print("[LED DEBUG] Successfully turned on RED LED")
+                except Exception as e:
+                    print(f"[LED DEBUG] Error turning on RED LED: {e}")
+                
                 host.update_status("Starting detection sequence...")
                 
                 # Reset motion detector for new detection sequence
@@ -418,6 +428,8 @@ def sequence_with_status():
                     if time.time() - scan_start_time > 1.0:
                         host.update_status("Scanning for movement...")
                         scan_start_time = time.time()
+                        # Verify LED state periodically
+                        print("[LED DEBUG] Verifying RED LED state during scan...")
                     
                     if position:
                         host.update_status("Motion detected! Moving to target...")
@@ -431,25 +443,39 @@ def sequence_with_status():
                         last_position = position
                         
                         # Turn off LED during movement
-                        RL.both_off()
-                        time.sleep(0.1)  # Ensure LED state change
+                        print("[LED DEBUG] Motion detected - Turning off LEDs...")
+                        try:
+                            RL.both_off()
+                            print("[LED DEBUG] Successfully turned off LEDs for movement")
+                        except Exception as e:
+                            print(f"[LED DEBUG] Error turning off LEDs for movement: {e}")
+                        time.sleep(0.1)
                         
                         # Move towards object
                         move_to_object(position)
                         
                         host.update_status("Movement complete - Starting new scan...")
-                        time.sleep(0.1)  # Brief pause before next scan
+                        time.sleep(0.1)
                         break
                     
-                    time.sleep(0.01)  # Minimal delay between scans
+                    time.sleep(0.01)
                 
                 # Ensure LED is off between detection cycles
-                RL.both_off()
-                time.sleep(0.1)  # Ensure LED state change
+                print("[LED DEBUG] Turning off LEDs between cycles...")
+                try:
+                    RL.both_off()
+                    print("[LED DEBUG] Successfully turned off LEDs between cycles")
+                except Exception as e:
+                    print(f"[LED DEBUG] Error turning off LEDs between cycles: {e}")
+                time.sleep(0.1)
                 
             except Exception as e:
-                print(f"Error in detection cycle: {e}")
-                RL.both_off()  # Ensure LEDs are off on error
+                print(f"[LED DEBUG] Error in detection cycle: {e}")
+                try:
+                    RL.both_off()
+                    print("[LED DEBUG] Successfully turned off LEDs after error")
+                except Exception as led_error:
+                    print(f"[LED DEBUG] Error turning off LEDs after error: {led_error}")
                 time.sleep(0.1)
                 continue
             
@@ -457,29 +483,75 @@ def sequence_with_status():
         error_msg = f"Error in main sequence: {e}"
         print(error_msg)
         host.update_status(error_msg)
-        RL.both_off()
+        print("[LED DEBUG] Turning off LEDs after main sequence error...")
+        try:
+            RL.both_off()
+            print("[LED DEBUG] Successfully turned off LEDs after main sequence error")
+        except Exception as led_error:
+            print(f"[LED DEBUG] Error turning off LEDs after main sequence error: {led_error}")
+        time.sleep(0.1)
         with servo_lock:
             move.clean_all()
     finally:
-        RL.both_off()
+        print("[LED DEBUG] Turning off LEDs after main sequence...")
+        try:
+            RL.both_off()
+            print("[LED DEBUG] Successfully turned off LEDs after main sequence")
+        except Exception as e:
+            print(f"[LED DEBUG] Error turning off LEDs after main sequence: {e}")
+        time.sleep(0.1)
         RL.pause()
 
 if __name__ == '__main__':
     try:
+        print("[LED DEBUG] Starting initialization sequence...")
+        
+        # Check if running as root
+        if os.geteuid() != 0:
+            print("[LED DEBUG] WARNING: Not running as root. LED control may fail.")
+            print("[LED DEBUG] Try running with 'sudo python3 babyStep.py'")
+        
         # Start video host (singleton ensures only one instance)
         host = VideoHost(port=5000, debug=True)
         
         # Initialize LED control first with proper setup
-        RL = RobotLight()
-        RL.start()
-        time.sleep(0.5)  # Wait for LED initialization
-        RL.both_off()  # Ensure LEDs start off
+        print("[LED DEBUG] Creating RobotLight instance...")
+        try:
+            RL = RobotLight()
+            print("[LED DEBUG] Successfully created RobotLight instance")
+            
+            print("[LED DEBUG] Starting RobotLight thread...")
+            RL.start()
+            print("[LED DEBUG] Successfully started RobotLight thread")
+            
+            # Test LED functionality
+            print("[LED DEBUG] Testing LED control...")
+            RL.both_off()
+            time.sleep(0.2)
+            RL.red()
+            time.sleep(0.2)
+            RL.green()
+            time.sleep(0.2)
+            RL.blue()
+            time.sleep(0.2)
+            RL.both_off()
+            print("[LED DEBUG] LED test complete")
+            
+        except Exception as e:
+            print(f"[LED DEBUG] Error during LED initialization: {e}")
+            print("[LED DEBUG] Make sure you have permissions to access GPIO")
+            print("[LED DEBUG] Try: sudo pip3 install rpi_ws281x")
+            raise
         
         # Initialize camera first
         host.update_status("Initializing camera...")
         if not host.init_camera():
-            print("Failed to initialize camera. Exiting...")
-            RL.both_off()
+            print("[LED DEBUG] Camera initialization failed, turning off LEDs...")
+            try:
+                RL.both_off()
+                print("[LED DEBUG] Successfully turned off LEDs after camera init failure")
+            except Exception as e:
+                print(f"[LED DEBUG] Error turning off LEDs after camera init failure: {e}")
             sys.exit(1)
             
         print("Camera initialized successfully")
@@ -504,27 +576,53 @@ if __name__ == '__main__':
         main_thread.start()
 
         # Indicate system is ready with green LED
-        RL.green()
-        time.sleep(0.2)  # Ensure LED state change
+        print("[LED DEBUG] Setting GREEN LED for ready state...")
+        try:
+            RL.both_off()  # Clear any previous state
+            time.sleep(0.1)
+            RL.green()
+            print("[LED DEBUG] Successfully set GREEN LED")
+        except Exception as e:
+            print(f"[LED DEBUG] Error setting GREEN LED: {e}")
+        time.sleep(0.2)
+        
         host.update_status("System ready - Motion detection active")
         
         # Keep the main thread running
+        print("[LED DEBUG] Entering main loop...")
         while True:
             time.sleep(1)
+            try:
+                # Verify LED state periodically
+                if 'RL' in locals():
+                    RL.green()  # Maintain green LED in main state
+            except Exception as e:
+                print(f"[LED DEBUG] Error maintaining LED state: {e}")
             
     except KeyboardInterrupt:
         print("\nShutting down...")
         host.update_status("Shutting down...")
         with servo_lock:
             move.clean_all()
-        RL.both_off()
-        time.sleep(0.1)  # Ensure LED state change
+        print("[LED DEBUG] Turning off LEDs during shutdown...")
+        try:
+            if 'RL' in locals():
+                RL.both_off()
+                print("[LED DEBUG] Successfully turned off LEDs during shutdown")
+        except Exception as e:
+            print(f"[LED DEBUG] Error turning off LEDs during shutdown: {e}")
+        time.sleep(0.1)
         host.cleanup()
     except Exception as e:
         print(f"\nError during startup: {e}")
         if 'RL' in locals():
-            RL.both_off()
-            time.sleep(0.1)  # Ensure LED state change
+            print("[LED DEBUG] Turning off LEDs after startup error...")
+            try:
+                RL.both_off()
+                print("[LED DEBUG] Successfully turned off LEDs after startup error")
+            except Exception as led_error:
+                print(f"[LED DEBUG] Error turning off LEDs after startup error: {led_error}")
+            time.sleep(0.1)
         if 'host' in locals():
             host.cleanup()
         sys.exit(1) 
