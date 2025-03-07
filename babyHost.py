@@ -118,6 +118,8 @@ class VideoHost:
                         display: flex;
                         flex-direction: column;
                         gap: 20px;
+                        max-height: 100vh;
+                        overflow-y: auto;
                     }
                     .main-detection {
                         background: #2a2a2a;
@@ -135,11 +137,23 @@ class VideoHost:
                         margin-top: 10px;
                         color: #888;
                     }
-                    .history-container {
-                        display: grid;
-                        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-                        gap: 10px;
+                    .history-section {
                         background: #2a2a2a;
+                        padding: 15px;
+                        border-radius: 5px;
+                    }
+                    .history-title {
+                        font-size: 16px;
+                        margin-bottom: 10px;
+                        color: #00ff00;
+                    }
+                    .history-grid {
+                        display: grid;
+                        grid-template-columns: repeat(2, 1fr);
+                        gap: 15px;
+                    }
+                    .history-item {
+                        background: #1a1a1a;
                         padding: 10px;
                         border-radius: 5px;
                     }
@@ -147,11 +161,34 @@ class VideoHost:
                         width: 100%;
                         height: auto;
                         border-radius: 3px;
-                        cursor: pointer;
-                        transition: transform 0.2s;
+                        margin-bottom: 10px;
                     }
-                    .history-image:hover {
-                        transform: scale(1.05);
+                    .history-info {
+                        font-size: 14px;
+                        color: #888;
+                    }
+                    .stats-overlay {
+                        position: absolute;
+                        top: 10px;
+                        left: 10px;
+                        background: rgba(0, 0, 0, 0.7);
+                        padding: 10px;
+                        border-radius: 5px;
+                        color: #00ff00;
+                        font-family: monospace;
+                        pointer-events: none;
+                    }
+                    .stat-row {
+                        display: flex;
+                        justify-content: space-between;
+                        margin-bottom: 5px;
+                    }
+                    .stat-label {
+                        margin-right: 10px;
+                        color: #888;
+                    }
+                    .stat-value {
+                        color: #00ff00;
                     }
                     .compass-container {
                         position: absolute;
@@ -277,7 +314,7 @@ class VideoHost:
                         updateCompass(pos.angle_x);
                         
                         // Update stats
-                        updateStats(info);
+                        updateLiveStats(info);
                         
                         return {
                             scaledCenter,
@@ -286,84 +323,78 @@ class VideoHost:
                         };
                     }
 
-                    function updateDetectionHistory() {
-                        const container = document.getElementById('historyContainer');
-                        container.innerHTML = detectionHistory.map((item, index) => {
-                            const canvas = document.createElement('canvas');
-                            canvas.width = 120;
-                            canvas.height = 90;
-                            canvas.className = 'history-image';
-                            canvas.onclick = () => showHistoryDetail(index);
-                            canvas.title = item.info.timestamp;
-                            
-                            // Draw the image
-                            const img = new Image();
-                            img.onload = () => {
-                                const ctx = canvas.getContext('2d');
-                                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                                
-                                // Draw overlay on historical image
-                                if (item.overlay_data) {
-                                    drawDetectionOverlay(ctx, item.info, canvas.width, canvas.height);
-                                }
-                            };
-                            img.src = 'data:image/jpeg;base64,' + item.image;
-                            
-                            return canvas.outerHTML;
-                        }).join('');
-                    }
-
-                    function showHistoryDetail(index) {
-                        const item = detectionHistory[index];
-                        const detailCanvas = document.createElement('canvas');
-                        const img = new Image();
-                        
-                        img.onload = () => {
-                            detailCanvas.width = img.width;
-                            detailCanvas.height = img.height;
-                            const ctx = detailCanvas.getContext('2d');
-                            
-                            // Draw the base image
-                            ctx.drawImage(img, 0, 0);
-                            
-                            // Draw the overlay
-                            if (item.overlay_data) {
-                                drawDetectionOverlay(ctx, item.info, detailCanvas.width, detailCanvas.height);
+                    function updateDetectionHistory(newDetection) {
+                        // Create history item with timestamp
+                        const historyItem = {
+                            ...newDetection,
+                            timestamp: new Date().toISOString(),
+                            overlayData: {
+                                position: newDetection.info.position,
+                                center: newDetection.info.center,
+                                frame_center: newDetection.info.frame_center
                             }
-                            
-                            // Convert to base64 and display
-                            document.getElementById('mainDetectionImage').src = detailCanvas.toDataURL();
-                            document.getElementById('mainDetectionImage').style.display = 'block';
-                            document.getElementById('detectionTimestamp').innerText = item.info.timestamp;
-                            
-                            // Update stats
-                            updateStats(item.info);
                         };
                         
-                        img.src = 'data:image/jpeg;base64,' + item.image;
+                        // Add to history array
+                        detectionHistory.unshift(historyItem);
+                        if (detectionHistory.length > MAX_HISTORY) {
+                            detectionHistory.pop();
+                        }
+                        
+                        // Update history display
+                        const container = document.querySelector('.history-grid');
+                        container.innerHTML = detectionHistory.map((item, index) => `
+                            <div class="history-item">
+                                <canvas class="history-image" 
+                                        width="320" height="240" 
+                                        data-index="${index}"></canvas>
+                                <div class="history-info">
+                                    <div>${new Date(item.timestamp).toLocaleTimeString()}</div>
+                                    <div>Distance: ${item.info.position.distance.toFixed(2)} units</div>
+                                    <div>Angle: ${item.info.position.angle_x.toFixed(2)}°</div>
+                                </div>
+                            </div>
+                        `).join('');
+                        
+                        // Draw images and overlays
+                        detectionHistory.forEach((item, index) => {
+                            const canvas = document.querySelector(`canvas[data-index="${index}"]`);
+                            if (canvas) {
+                                const ctx = canvas.getContext('2d');
+                                const img = new Image();
+                                img.onload = () => {
+                                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                                    drawDetectionOverlay(ctx, item.info, canvas.width, canvas.height);
+                                };
+                                img.src = 'data:image/jpeg;base64,' + item.image;
+                            }
+                        });
                     }
-                    
-                    function drawScanningEffect(ctx, width, height) {
-                        const time = Date.now() / 1000;
-                        const scanLineY = (Math.sin(time) + 1) * height / 2;
-                        
-                        ctx.strokeStyle = 'rgba(0, 255, 0, 0.2)';
-                        ctx.lineWidth = 2;
-                        ctx.beginPath();
-                        ctx.moveTo(0, scanLineY);
-                        ctx.lineTo(width, scanLineY);
-                        ctx.stroke();
-                        
-                        // Add scan line glow
-                        const gradient = ctx.createLinearGradient(0, scanLineY - 10, 0, scanLineY + 10);
-                        gradient.addColorStop(0, 'rgba(0, 255, 0, 0)');
-                        gradient.addColorStop(0.5, 'rgba(0, 255, 0, 0.1)');
-                        gradient.addColorStop(1, 'rgba(0, 255, 0, 0)');
-                        
-                        ctx.fillStyle = gradient;
-                        ctx.fillRect(0, scanLineY - 10, width, 20);
+
+                    function updateLiveStats(info) {
+                        const stats = document.querySelector('.stats-overlay');
+                        if (stats) {
+                            stats.innerHTML = `
+                                <div class="stat-row">
+                                    <span class="stat-label">Distance:</span>
+                                    <span class="stat-value">${info.position.distance.toFixed(2)} units</span>
+                                </div>
+                                <div class="stat-row">
+                                    <span class="stat-label">Angle X:</span>
+                                    <span class="stat-value">${info.position.angle_x.toFixed(2)}°</span>
+                                </div>
+                                <div class="stat-row">
+                                    <span class="stat-label">Angle Y:</span>
+                                    <span class="stat-value">${info.position.angle_y.toFixed(2)}°</span>
+                                </div>
+                                <div class="stat-row">
+                                    <span class="stat-label">Size:</span>
+                                    <span class="stat-value">${info.object_size.width}x${info.object_size.height}px</span>
+                                </div>
+                            `;
+                        }
                     }
-                    
+
                     function updateCompass(angle) {
                         const compass = document.querySelector('.compass-arrow');
                         if (compass) {
@@ -371,42 +402,6 @@ class VideoHost:
                         }
                     }
                     
-                    function updateStats(info) {
-                        const stats = document.getElementById('statsContainer');
-                        if (stats) {
-                            stats.innerHTML = `
-                                <div class="stat-box">
-                                    <div class="stat-title">Distance</div>
-                                    <div class="stat-value">
-                                        ${info.position.distance.toFixed(2)}
-                                        <span class="stat-unit">units</span>
-                                    </div>
-                                </div>
-                                <div class="stat-box">
-                                    <div class="stat-title">Angle X</div>
-                                    <div class="stat-value">
-                                        ${info.position.angle_x.toFixed(2)}
-                                        <span class="stat-unit">degrees</span>
-                                    </div>
-                                </div>
-                                <div class="stat-box">
-                                    <div class="stat-title">Angle Y</div>
-                                    <div class="stat-value">
-                                        ${info.position.angle_y.toFixed(2)}
-                                        <span class="stat-unit">degrees</span>
-                                    </div>
-                                </div>
-                                <div class="stat-box">
-                                    <div class="stat-title">Object Size</div>
-                                    <div class="stat-value">
-                                        ${info.object_size.width}x${info.object_size.height}
-                                        <span class="stat-unit">px</span>
-                                    </div>
-                                </div>
-                            `;
-                        }
-                    }
-
                     function updateStatus() {
                         fetch('/status')
                             .then(response => response.json())
@@ -414,39 +409,24 @@ class VideoHost:
                                 document.getElementById('processStatus').innerText = data.status;
                                 
                                 if (data.detection_info) {
-                                    // Update overlay with new detection
+                                    // Update live overlay
                                     updateOverlay(data);
+                                    updateLiveStats(data.detection_info);
                                     
                                     if (data.last_detection_image) {
-                                        const imgData = {
+                                        const detection = {
                                             image: data.last_detection_image,
-                                            info: data.detection_info,
-                                            overlay_data: {
-                                                position: data.detection_info.position,
-                                                center: data.detection_info.center,
-                                                frame_center: data.detection_info.frame_center
-                                            }
+                                            info: data.detection_info
                                         };
                                         
                                         // Only add to history if it's a new detection
                                         if (!detectionHistory.length || 
-                                            detectionHistory[detectionHistory.length-1].info.timestamp !== imgData.info.timestamp) {
-                                            detectionHistory.push(imgData);
-                                            if (detectionHistory.length > MAX_HISTORY) {
-                                                detectionHistory.shift();
-                                            }
-                                            updateDetectionHistory();
-                                            
-                                            // Show the latest detection
-                                            document.getElementById('mainDetectionImage').src = 
-                                                'data:image/jpeg;base64,' + data.last_detection_image;
-                                            document.getElementById('mainDetectionImage').style.display = 'block';
-                                            document.getElementById('detectionTimestamp').innerText = 
-                                                data.detection_info.timestamp;
+                                            detectionHistory[0].info.timestamp !== detection.info.timestamp) {
+                                            updateDetectionHistory(detection);
                                         }
                                     }
                                 } else {
-                                    // Clear current overlay when no detection
+                                    // Clear live overlay but keep scanning effect
                                     const canvas = document.getElementById('videoOverlay');
                                     const ctx = canvas.getContext('2d');
                                     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -482,15 +462,16 @@ class VideoHost:
                         <div class="video-wrapper">
                             <img class="video-feed" src="/video_feed">
                             <canvas id="videoOverlay"></canvas>
-                        </div>
-                        <div class="compass-container">
-                            <div class="compass">
-                                <div class="compass-arrow"></div>
-                                <div class="compass-labels">
-                                    <span class="compass-n">N</span>
-                                    <span class="compass-e">E</span>
-                                    <span class="compass-s">S</span>
-                                    <span class="compass-w">W</span>
+                            <div class="stats-overlay"></div>
+                            <div class="compass-container">
+                                <div class="compass">
+                                    <div class="compass-arrow"></div>
+                                    <div class="compass-labels">
+                                        <span class="compass-n">N</span>
+                                        <span class="compass-e">E</span>
+                                        <span class="compass-s">S</span>
+                                        <span class="compass-w">W</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -498,15 +479,11 @@ class VideoHost:
                     
                     <div class="detection-section">
                         <div id="processStatus" class="status-box">Initializing...</div>
-                        <div class="main-detection">
-                            <img id="mainDetectionImage" style="display: none;">
-                            <span id="detectionTimestamp"></span>
-                        </div>
-                        <div class="history-container" id="historyContainer">
-                            <!-- Detection history will be populated here -->
-                        </div>
-                        <div id="statsContainer" class="stats-section">
-                            <!-- Stats content -->
+                        <div class="history-section">
+                            <div class="history-title">Detection History</div>
+                            <div class="history-grid">
+                                <!-- Detection history will be populated here -->
+                            </div>
                         </div>
                     </div>
                 </div>
