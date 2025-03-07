@@ -38,15 +38,11 @@ class VideoHost:
             self.movement_info = None
             self.head_movement_info = None
             self.status_history = []  # Keep track of status history
-            self.detection_points = []  # Store motion detection points
-            self.shutdown_flag = False  # Flag to indicate shutdown request
             
             # Register routes
             self.app.route('/')(self.index)
             self.app.route('/video_feed')(self.video_feed)
             self.app.route('/status')(self.get_status)
-            self.app.route('/detection_points')(self.get_detection_points)
-            self.app.route('/shutdown', methods=['POST'])(self.shutdown)
             self.app.route('/favicon.ico')(self.favicon)
             self.initialized = True
     
@@ -84,7 +80,7 @@ class VideoHost:
 
     def index(self):
         """Video streaming home page."""
-        video_feed_url = '/video_feed'
+        video_feed_url = '/video_feed'  # Direct URL instead of template
         return """
         <html>
             <head>
@@ -259,106 +255,43 @@ class VideoHost:
                         background: #2a2a2a;
                         padding: 15px;
                         border-radius: 5px;
-                        margin-top: 20px;
-                        position: relative;
+                        margin-bottom: 15px;
                     }
-                    .map-canvas {
+                    #mapCanvas {
                         width: 100%;
                         height: 300px;
                         background: #1a1a1a;
-                        border: 1px solid #00ff00;
-                        position: relative;
+                        border-radius: 3px;
                     }
-                    .map-legend {
-                        position: absolute;
-                        top: 10px;
-                        right: 10px;
-                        background: rgba(0, 0, 0, 0.7);
-                        padding: 10px;
-                        border-radius: 5px;
-                    }
-                    .legend-item {
-                        display: flex;
-                        align-items: center;
-                        margin: 5px 0;
-                    }
-                    .legend-color {
-                        width: 12px;
-                        height: 12px;
-                        margin-right: 8px;
-                        border-radius: 50%;
-                    }
-                    .motion-point {
-                        background: #ff0000;
-                    }
-                    .robot-position {
-                        background: #00ff00;
-                    }
-                    .control-panel {
-                        position: fixed;
-                        top: 20px;
-                        right: 20px;
-                        background: rgba(0, 0, 0, 0.8);
+                    .status-box {
+                        background: #2a2a2a;
                         padding: 15px;
                         border-radius: 5px;
-                        z-index: 1000;
+                        margin-bottom: 15px;
+                        font-family: monospace;
+                        white-space: pre-wrap;
+                        min-height: 200px;
+                        max-height: 300px;
+                        height: 250px;
+                        overflow-y: auto;
+                        font-size: 14px;
+                        line-height: 1.4;
+                        word-break: break-word;
                     }
-                    .shutdown-btn {
-                        background: #ff3b30;
-                        color: white;
-                        border: none;
-                        padding: 10px 20px;
-                        border-radius: 5px;
-                        cursor: pointer;
-                        font-weight: bold;
-                        transition: background 0.3s;
+                    .movement-log {
+                        color: #00ff00;
+                        margin: 5px 0;
+                        padding: 2px 0;
                     }
-                    .shutdown-btn:hover {
-                        background: #d63029;
+                    .head-movement-log {
+                        color: #00ffff;
+                        margin: 5px 0;
+                        padding: 2px 0;
                     }
-                    .shutdown-btn.disabled {
-                        background: #666;
-                        cursor: not-allowed;
-                    }
-                    .confirmation-overlay {
-                        display: none;
-                        position: fixed;
-                        top: 0;
-                        left: 0;
-                        right: 0;
-                        bottom: 0;
-                        background: rgba(0, 0, 0, 0.8);
-                        z-index: 2000;
-                        align-items: center;
-                        justify-content: center;
-                    }
-                    .confirmation-dialog {
-                        background: #2a2a2a;
-                        padding: 20px;
-                        border-radius: 10px;
-                        text-align: center;
-                    }
-                    .confirmation-buttons {
-                        margin-top: 20px;
-                        display: flex;
-                        justify-content: center;
-                        gap: 10px;
-                    }
-                    .confirm-btn {
-                        background: #ff3b30;
-                        color: white;
-                        border: none;
-                        padding: 8px 16px;
-                        border-radius: 5px;
-                        cursor: pointer;
-                    }
-                    .cancel-btn {
-                        background: #666;
-                        color: white;
-                        border: none;
-                        padding: 8px 16px;
-                        border-radius: 5px;
-                        cursor: pointer;
+                    .progress-log {
+                        color: #ffff00;
+                        margin: 5px 0;
+                        padding: 2px 0;
                     }
                 </style>
                 <script>
@@ -570,62 +503,60 @@ class VideoHost:
                             .then(response => response.json())
                             .then(data => {
                                 const statusBox = document.getElementById('processStatus');
-                                if (statusBox) {  // Add null check
-                                    let statusText = '';
-                                    
-                                    // Add status history with escaped newlines
-                                    if (data.status_history && data.status_history.length > 0) {
-                                        statusText = data.status_history.join('\\n') + '\\n\\n';
+                                let statusText = '';
+                                
+                                // Add status history with escaped newlines
+                                if (data.status_history && data.status_history.length > 0) {
+                                    statusText = data.status_history.join('\\n') + '\\n\\n';
+                                }
+                                
+                                statusText += 'Current Status: ' + data.status + '\\n';
+                                
+                                if (data.movement_info) {
+                                    statusText += '\\nMovement Info:\\n' + data.movement_info.status + '\\n';
+                                    if (data.movement_info.progress) {
+                                        statusText += 'Progress: ' + data.movement_info.progress + '%\\n';
+                                    }
+                                    if (data.movement_info.details) {
+                                        statusText += 'Details: ' + data.movement_info.details + '\\n';
                                     }
                                     
-                                    statusText += 'Current Status: ' + data.status + '\\n';
-                                    
-                                    if (data.movement_info) {
-                                        statusText += '\\nMovement Info:\\n' + data.movement_info.status + '\\n';
-                                        if (data.movement_info.progress) {
-                                            statusText += 'Progress: ' + data.movement_info.progress + '%\\n';
-                                        }
-                                        if (data.movement_info.details) {
-                                            statusText += 'Details: ' + data.movement_info.details + '\\n';
-                                        }
-                                        
-                                        // Update robot position and map
-                                        if (data.movement_info.position) {
-                                            const newPos = data.movement_info.position;
-                                            if (robotPosition.x !== newPos.x || 
-                                                robotPosition.y !== newPos.y || 
-                                                robotPosition.angle !== newPos.angle) {
-                                                robotPosition = {...newPos};
-                                                pathHistory.push({...newPos});
-                                                updateMap(data);
-                                            }
+                                    // Update robot position and map
+                                    if (data.movement_info.position) {
+                                        const newPos = data.movement_info.position;
+                                        if (robotPosition.x !== newPos.x || 
+                                            robotPosition.y !== newPos.y || 
+                                            robotPosition.angle !== newPos.angle) {
+                                            robotPosition = {...newPos};
+                                            pathHistory.push({...newPos});
+                                            updateMap(data);
                                         }
                                     }
-                                    
-                                    if (data.head_movement_info) {
-                                        statusText += '\\nHead Movement:\\n';
-                                        statusText += 'Position: X=' + data.head_movement_info.x + ', Y=' + data.head_movement_info.y + '\\n';
-                                        if (data.head_movement_info.target) {
-                                            statusText += 'Target: X=' + data.head_movement_info.target.x + ', Y=' + data.head_movement_info.target.y + '\\n';
-                                        }
+                                }
+                                
+                                if (data.head_movement_info) {
+                                    statusText += '\\nHead Movement:\\n';
+                                    statusText += 'Position: X=' + data.head_movement_info.x + ', Y=' + data.head_movement_info.y + '\\n';
+                                    if (data.head_movement_info.target) {
+                                        statusText += 'Target: X=' + data.head_movement_info.target.x + ', Y=' + data.head_movement_info.target.y + '\\n';
                                     }
+                                }
+                                
+                                statusBox.innerText = statusText;
+                                
+                                if (data.detection_info && data.last_detection_image) {
+                                    updateOverlay(data);
                                     
-                                    statusBox.innerText = statusText;
+                                    const detection = {
+                                        image: data.last_detection_image,
+                                        info: data.detection_info
+                                    };
                                     
-                                    if (data.detection_info && data.last_detection_image) {
-                                        updateOverlay(data);
-                                        
-                                        const detection = {
-                                            image: data.last_detection_image,
-                                            info: data.detection_info
-                                        };
-                                        
-                                        const lastDetection = detectionHistory[0];
-                                        if (!lastDetection || 
-                                            lastDetection.info.timestamp !== detection.info.timestamp) {
-                                            console.log("New detection added to history");
-                                            updateDetectionHistory(detection);
-                                        }
+                                    const lastDetection = detectionHistory[0];
+                                    if (!lastDetection || 
+                                        lastDetection.info.timestamp !== detection.info.timestamp) {
+                                        console.log("New detection added to history");
+                                        updateDetectionHistory(detection);
                                     }
                                 }
                             })
@@ -815,7 +746,7 @@ class VideoHost:
                         
                         const { ctx, width, height, centerX, centerY, transformX, transformY } = initMap();
                         
-                        // Draw path history with gradient color based on time
+                        // Draw path history
                         if (pathHistory.length > 0) {
                             ctx.strokeStyle = '#004400';
                             ctx.lineWidth = 2;
@@ -830,40 +761,10 @@ class VideoHost:
                                 }
                             });
                             ctx.stroke();
-
-                            // Draw direction arrows along the path
-                            pathHistory.forEach((pos, index) => {
-                                if (index < pathHistory.length - 1) {
-                                    const nextPos = pathHistory[index + 1];
-                                    const x = transformX(pos.x);
-                                    const y = transformY(pos.y);
-                                    const nextX = transformX(nextPos.x);
-                                    const nextY = transformY(nextPos.y);
-                                    
-                                    // Calculate midpoint for arrow
-                                    const midX = (x + nextX) / 2;
-                                    const midY = (y + nextY) / 2;
-                                    
-                                    // Calculate angle
-                                    const angle = Math.atan2(nextY - y, nextX - x);
-                                    
-                                    // Draw arrow
-                                    ctx.beginPath();
-                                    ctx.moveTo(midX, midY);
-                                    ctx.lineTo(midX - 10 * Math.cos(angle - Math.PI/6),
-                                             midY - 10 * Math.sin(angle - Math.PI/6));
-                                    ctx.moveTo(midX, midY);
-                                    ctx.lineTo(midX - 10 * Math.cos(angle + Math.PI/6),
-                                             midY - 10 * Math.sin(angle + Math.PI/6));
-                                    ctx.strokeStyle = '#00ff00';
-                                    ctx.lineWidth = 2;
-                                    ctx.stroke();
-                                }
-                            });
                         }
                         
-                        // Draw detection points with connecting lines and vectors
-                        detectionHistory.forEach((detection, index) => {
+                        // Draw detection points
+                        detectionHistory.forEach(detection => {
                             const info = detection.info;
                             const distance = info.position.distance;
                             const angle = info.position.angle_x * Math.PI / 180;
@@ -871,73 +772,31 @@ class VideoHost:
                             const x = transformX(distance * Math.cos(angle));
                             const y = transformY(distance * Math.sin(angle));
                             
-                            // Draw detection point with size indicator
-                            const size = Math.min(10, Math.max(5, Math.sqrt(info.object_size.width * info.object_size.height) / 50));
+                            // Draw detection point
                             ctx.fillStyle = '#ff0000';
                             ctx.beginPath();
-                            ctx.arc(x, y, size, 0, Math.PI * 2);
+                            ctx.arc(x, y, 5, 0, Math.PI * 2);
                             ctx.fill();
                             
-                            // Draw line from origin to detection point with gradient
-                            const gradient = ctx.createLinearGradient(transformX(0), transformY(0), x, y);
-                            gradient.addColorStop(0, 'rgba(255, 0, 0, 0.3)');
-                            gradient.addColorStop(1, 'rgba(255, 0, 0, 0.1)');
-                            ctx.strokeStyle = gradient;
+                            // Draw line from origin to detection point
+                            ctx.strokeStyle = '#440000';
                             ctx.setLineDash([5, 5]);
                             ctx.beginPath();
                             ctx.moveTo(transformX(0), transformY(0));
                             ctx.lineTo(x, y);
                             ctx.stroke();
                             ctx.setLineDash([]);
-                            
-                            // Draw distance and angle labels
-                            ctx.fillStyle = '#ff0000';
-                            ctx.font = '12px monospace';
-                            ctx.fillText(`${distance.toFixed(1)}m`, x + 10, y);
-                            ctx.fillText(`${(info.position.angle_x).toFixed(1)}°`, x, y - 10);
-                            
-                            // Draw vector from previous detection if exists
-                            if (index > 0) {
-                                const prevDetection = detectionHistory[index - 1];
-                                const prevDistance = prevDetection.info.position.distance;
-                                const prevAngle = prevDetection.info.position.angle_x * Math.PI / 180;
-                                const prevX = transformX(prevDistance * Math.cos(prevAngle));
-                                const prevY = transformY(prevDistance * Math.sin(prevAngle));
-                                
-                                // Draw movement vector
-                                ctx.strokeStyle = '#ff6600';
-                                ctx.lineWidth = 2;
-                                ctx.beginPath();
-                                ctx.moveTo(prevX, prevY);
-                                ctx.lineTo(x, y);
-                                ctx.stroke();
-                                
-                                // Draw movement arrow
-                                const midX = (prevX + x) / 2;
-                                const midY = (prevY + y) / 2;
-                                const moveAngle = Math.atan2(y - prevY, x - prevX);
-                                
-                                ctx.beginPath();
-                                ctx.moveTo(midX, midY);
-                                ctx.lineTo(midX - 8 * Math.cos(moveAngle - Math.PI/6),
-                                         midY - 8 * Math.sin(moveAngle - Math.PI/6));
-                                ctx.moveTo(midX, midY);
-                                ctx.lineTo(midX - 8 * Math.cos(moveAngle + Math.PI/6),
-                                         midY - 8 * Math.sin(moveAngle + Math.PI/6));
-                                ctx.stroke();
-                            }
                         });
                         
-                        // Draw current robot position with orientation
+                        // Draw current robot position
                         const robotX = transformX(robotPosition.x);
                         const robotY = transformY(robotPosition.y);
                         
-                        // Draw robot triangle with orientation
+                        // Draw robot triangle
                         ctx.save();
                         ctx.translate(robotX, robotY);
                         ctx.rotate(-robotPosition.angle * Math.PI / 180);
                         
-                        // Draw robot body
                         ctx.fillStyle = '#00ff00';
                         ctx.beginPath();
                         ctx.moveTo(0, -10);
@@ -946,14 +805,6 @@ class VideoHost:
                         ctx.closePath();
                         ctx.fill();
                         
-                        // Draw forward direction indicator
-                        ctx.strokeStyle = '#ffffff';
-                        ctx.lineWidth = 2;
-                        ctx.beginPath();
-                        ctx.moveTo(0, -8);
-                        ctx.lineTo(0, -12);
-                        ctx.stroke();
-                        
                         ctx.restore();
                         
                         // Draw scale indicator
@@ -961,161 +812,15 @@ class VideoHost:
                         ctx.font = '12px monospace';
                         ctx.fillText(`Scale: ${(1/mapScale).toFixed(2)} units/pixel`, 10, height - 10);
                     }
-
-                    class DetectionMap {
-                        constructor() {
-                            this.canvas = document.getElementById('mapCanvas');
-                            this.ctx = this.canvas.getContext('2d');
-                            this.points = [];
-                            this.robotPosition = { x: this.canvas.width / 2, y: this.canvas.height / 2 };
-                            this.scale = 1;
-                            
-                            // Set up canvas size
-                            this.resizeCanvas();
-                            window.addEventListener('resize', () => this.resizeCanvas());
-                            
-                            // Start update loop
-                            this.updatePoints();
-                        }
-                        
-                        resizeCanvas() {
-                            const container = this.canvas.parentElement;
-                            this.canvas.width = container.clientWidth;
-                            this.canvas.height = container.clientHeight;
-                            this.draw();
-                        }
-                        
-                        async updatePoints() {
-                            try {
-                                const response = await fetch('/detection_points');
-                                const points = await response.json();
-                                this.points = points;
-                                this.draw();
-                            } catch (error) {
-                                console.error('Error fetching detection points:', error);
-                            }
-                            setTimeout(() => this.updatePoints(), 1000);
-                        }
-                        
-                        draw() {
-                            const ctx = this.ctx;
-                            ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-                            
-                            // Draw grid
-                            ctx.strokeStyle = '#333333';
-                            ctx.lineWidth = 1;
-                            const gridSize = 50;
-                            
-                            for (let x = 0; x < this.canvas.width; x += gridSize) {
-                                ctx.beginPath();
-                                ctx.moveTo(x, 0);
-                                ctx.lineTo(x, this.canvas.height);
-                                ctx.stroke();
-                            }
-                            
-                            for (let y = 0; y < this.canvas.height; y += gridSize) {
-                                ctx.beginPath();
-                                ctx.moveTo(0, y);
-                                ctx.lineTo(this.canvas.width, y);
-                                ctx.stroke();
-                            }
-                            
-                            // Draw robot position
-                            ctx.fillStyle = '#00ff00';
-                            ctx.beginPath();
-                            ctx.arc(this.robotPosition.x, this.robotPosition.y, 8, 0, Math.PI * 2);
-                            ctx.fill();
-                            
-                            // Draw detection points
-                            this.points.forEach((point, index) => {
-                                const alpha = Math.max(0.2, 1 - (this.points.length - index) / this.points.length);
-                                ctx.fillStyle = `rgba(255, 0, 0, ${alpha})`;
-                                ctx.beginPath();
-                                ctx.arc(point.x * this.scale + this.canvas.width/2, 
-                                      point.y * this.scale + this.canvas.height/2, 
-                                      5, 0, Math.PI * 2);
-                                ctx.fill();
-                                
-                                // Draw connecting line to previous point
-                                if (index > 0) {
-                                    const prevPoint = this.points[index - 1];
-                                    ctx.strokeStyle = `rgba(255, 0, 0, ${alpha * 0.5})`;
-                                    ctx.beginPath();
-                                    ctx.moveTo(prevPoint.x * this.scale + this.canvas.width/2, 
-                                             prevPoint.y * this.scale + this.canvas.height/2);
-                                    ctx.lineTo(point.x * this.scale + this.canvas.width/2, 
-                                             point.y * this.scale + this.canvas.height/2);
-                                    ctx.stroke();
-                                }
-                            });
-                        }
-                    }
-                    
-                    // Initialize map when page loads
-                    window.addEventListener('load', () => {
-                        const map = new DetectionMap();
-                    });
-
-                    function initiateShutdown() {
-                        const overlay = document.getElementById('confirmationOverlay');
-                        overlay.style.display = 'flex';
-                    }
-
-                    function cancelShutdown() {
-                        const overlay = document.getElementById('confirmationOverlay');
-                        overlay.style.display = 'none';
-                    }
-
-                    function confirmShutdown() {
-                        const shutdownBtn = document.getElementById('shutdownBtn');
-                        shutdownBtn.disabled = true;
-                        shutdownBtn.classList.add('disabled');
-                        shutdownBtn.textContent = 'Shutting down...';
-
-                        fetch('/shutdown', {
-                            method: 'POST',
-                        })
-                        .then(response => response.json())
-                        .then(data => {
-                            console.log('Shutdown initiated:', data);
-                            // Hide confirmation dialog
-                            const overlay = document.getElementById('confirmationOverlay');
-                            overlay.style.display = 'none';
-                        })
-                        .catch(error => {
-                            console.error('Error during shutdown:', error);
-                            shutdownBtn.disabled = false;
-                            shutdownBtn.classList.remove('disabled');
-                            shutdownBtn.textContent = 'Shutdown';
-                        });
-                    }
                 </script>
             </head>
             <body>
-                <div class="control-panel">
-                    <button id="shutdownBtn" class="shutdown-btn" onclick="initiateShutdown()">Shutdown</button>
-                </div>
-                <div id="confirmationOverlay" class="confirmation-overlay">
-                    <div class="confirmation-dialog">
-                        <h2>Confirm Shutdown</h2>
-                        <p>Are you sure you want to shut down the robot?</p>
-                        <div class="confirmation-buttons">
-                            <button class="confirm-btn" onclick="confirmShutdown()">Yes, Shutdown</button>
-                            <button class="cancel-btn" onclick="cancelShutdown()">Cancel</button>
-                        </div>
-                    </div>
-                </div>
                 <div class="container">
                     <div class="video-section">
                         <div class="video-wrapper">
                             <img class="video-feed" src="/video_feed">
                             <canvas id="videoOverlay"></canvas>
-                            <div class="stats-overlay">
-                                <div class="stat-row">
-                                    <span class="stat-label">Status:</span>
-                                    <span class="stat-value" id="processStatus">Initializing...</span>
-                                </div>
-                            </div>
+                            <div class="stats-overlay"></div>
                             <div class="compass-container">
                                 <div class="compass">
                                     <div class="compass-arrow"></div>
@@ -1128,31 +833,18 @@ class VideoHost:
                                 </div>
                             </div>
                         </div>
-                        <div class="map-section">
-                            <h3>Detection Map</h3>
-                            <div class="map-canvas">
-                                <canvas id="mapCanvas"></canvas>
-                                <div class="map-legend">
-                                    <div class="legend-item">
-                                        <div class="legend-color motion-point"></div>
-                                        <span>Motion Detection</span>
-                                    </div>
-                                    <div class="legend-item">
-                                        <div class="legend-color robot-position"></div>
-                                        <span>Robot Position</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
                     </div>
+                    
                     <div class="detection-section">
-                        <div class="main-detection">
-                            <img id="mainDetectionImage">
-                            <span id="detectionTimestamp"></span>
+                        <div id="processStatus" class="status-box">Initializing...</div>
+                        <div class="map-section">
+                            <canvas id="mapCanvas"></canvas>
                         </div>
                         <div class="history-section">
                             <div class="history-title">Detection History</div>
-                            <div class="history-grid" id="historyGrid"></div>
+                            <div class="history-grid">
+                                <!-- Detection history will be populated here -->
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1296,32 +988,6 @@ class VideoHost:
     def favicon(self):
         """Return a transparent favicon to prevent 404 errors."""
         return Response(status=204)
-
-    def add_detection_point(self, x, y, timestamp, type="motion"):
-        """Add a new detection point to the map"""
-        point = {
-            'x': x,
-            'y': y,
-            'timestamp': timestamp,
-            'type': type
-        }
-        self.detection_points.append(point)
-        # Keep only last 50 points
-        if len(self.detection_points) > 50:
-            self.detection_points.pop(0)
-    
-    def get_detection_points(self):
-        """API endpoint to get detection points"""
-        return jsonify(self.detection_points)
-
-    def shutdown(self):
-        """Handle shutdown request from web interface"""
-        self.shutdown_flag = True
-        return jsonify({"status": "Shutdown initiated"})
-
-    def is_shutdown_requested(self):
-        """Check if shutdown has been requested"""
-        return self.shutdown_flag
 
 if __name__ == '__main__':
     # Test the video host independently
