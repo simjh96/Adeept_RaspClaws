@@ -258,7 +258,7 @@ def move_to_object(position):
     movement_plan = {
         'turn': {
             'angle': turn_angle,
-            'direction': 'left' if turn_angle > 0 else 'right',
+            'direction': 'right' if turn_angle > 0 else 'left',
             'steps': min(abs(int(turn_angle / 10)), 4)
         },
         'forward': {
@@ -353,10 +353,6 @@ def move_to_object(position):
     
     # Reset moving flag
     detector.is_moving = False
-    
-    # Clear detection history after movement
-    detector.last_detection_image = None
-    detector.detection_info = None
 
 def sequence_with_status():
     try:

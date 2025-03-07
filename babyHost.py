@@ -815,7 +815,7 @@ class VideoHost:
                         
                         const { ctx, width, height, centerX, centerY, transformX, transformY } = initMap();
                         
-                        // Draw path history
+                        // Draw path history with gradient color based on time
                         if (pathHistory.length > 0) {
                             ctx.strokeStyle = '#004400';
                             ctx.lineWidth = 2;
@@ -830,10 +830,40 @@ class VideoHost:
                                 }
                             });
                             ctx.stroke();
+
+                            // Draw direction arrows along the path
+                            pathHistory.forEach((pos, index) => {
+                                if (index < pathHistory.length - 1) {
+                                    const nextPos = pathHistory[index + 1];
+                                    const x = transformX(pos.x);
+                                    const y = transformY(pos.y);
+                                    const nextX = transformX(nextPos.x);
+                                    const nextY = transformY(nextPos.y);
+                                    
+                                    // Calculate midpoint for arrow
+                                    const midX = (x + nextX) / 2;
+                                    const midY = (y + nextY) / 2;
+                                    
+                                    // Calculate angle
+                                    const angle = Math.atan2(nextY - y, nextX - x);
+                                    
+                                    // Draw arrow
+                                    ctx.beginPath();
+                                    ctx.moveTo(midX, midY);
+                                    ctx.lineTo(midX - 10 * Math.cos(angle - Math.PI/6),
+                                             midY - 10 * Math.sin(angle - Math.PI/6));
+                                    ctx.moveTo(midX, midY);
+                                    ctx.lineTo(midX - 10 * Math.cos(angle + Math.PI/6),
+                                             midY - 10 * Math.sin(angle + Math.PI/6));
+                                    ctx.strokeStyle = '#00ff00';
+                                    ctx.lineWidth = 2;
+                                    ctx.stroke();
+                                }
+                            });
                         }
                         
-                        // Draw detection points
-                        detectionHistory.forEach(detection => {
+                        // Draw detection points with connecting lines and vectors
+                        detectionHistory.forEach((detection, index) => {
                             const info = detection.info;
                             const distance = info.position.distance;
                             const angle = info.position.angle_x * Math.PI / 180;
@@ -841,31 +871,73 @@ class VideoHost:
                             const x = transformX(distance * Math.cos(angle));
                             const y = transformY(distance * Math.sin(angle));
                             
-                            // Draw detection point
+                            // Draw detection point with size indicator
+                            const size = Math.min(10, Math.max(5, Math.sqrt(info.object_size.width * info.object_size.height) / 50));
                             ctx.fillStyle = '#ff0000';
                             ctx.beginPath();
-                            ctx.arc(x, y, 5, 0, Math.PI * 2);
+                            ctx.arc(x, y, size, 0, Math.PI * 2);
                             ctx.fill();
                             
-                            // Draw line from origin to detection point
-                            ctx.strokeStyle = '#440000';
+                            // Draw line from origin to detection point with gradient
+                            const gradient = ctx.createLinearGradient(transformX(0), transformY(0), x, y);
+                            gradient.addColorStop(0, 'rgba(255, 0, 0, 0.3)');
+                            gradient.addColorStop(1, 'rgba(255, 0, 0, 0.1)');
+                            ctx.strokeStyle = gradient;
                             ctx.setLineDash([5, 5]);
                             ctx.beginPath();
                             ctx.moveTo(transformX(0), transformY(0));
                             ctx.lineTo(x, y);
                             ctx.stroke();
                             ctx.setLineDash([]);
+                            
+                            // Draw distance and angle labels
+                            ctx.fillStyle = '#ff0000';
+                            ctx.font = '12px monospace';
+                            ctx.fillText(`${distance.toFixed(1)}m`, x + 10, y);
+                            ctx.fillText(`${(info.position.angle_x).toFixed(1)}°`, x, y - 10);
+                            
+                            // Draw vector from previous detection if exists
+                            if (index > 0) {
+                                const prevDetection = detectionHistory[index - 1];
+                                const prevDistance = prevDetection.info.position.distance;
+                                const prevAngle = prevDetection.info.position.angle_x * Math.PI / 180;
+                                const prevX = transformX(prevDistance * Math.cos(prevAngle));
+                                const prevY = transformY(prevDistance * Math.sin(prevAngle));
+                                
+                                // Draw movement vector
+                                ctx.strokeStyle = '#ff6600';
+                                ctx.lineWidth = 2;
+                                ctx.beginPath();
+                                ctx.moveTo(prevX, prevY);
+                                ctx.lineTo(x, y);
+                                ctx.stroke();
+                                
+                                // Draw movement arrow
+                                const midX = (prevX + x) / 2;
+                                const midY = (prevY + y) / 2;
+                                const moveAngle = Math.atan2(y - prevY, x - prevX);
+                                
+                                ctx.beginPath();
+                                ctx.moveTo(midX, midY);
+                                ctx.lineTo(midX - 8 * Math.cos(moveAngle - Math.PI/6),
+                                         midY - 8 * Math.sin(moveAngle - Math.PI/6));
+                                ctx.moveTo(midX, midY);
+                                ctx.lineTo(midX - 8 * Math.cos(moveAngle + Math.PI/6),
+                                         midY - 8 * Math.sin(moveAngle + Math.PI/6));
+                                ctx.stroke();
+                            }
                         });
                         
-                        // Draw current robot position
+                        // Draw current robot position with orientation
                         const robotX = transformX(robotPosition.x);
                         const robotY = transformY(robotPosition.y);
                         
-                        // Draw robot triangle
+                        // Draw robot triangle with orientation
                         ctx.save();
                         ctx.translate(robotX, robotY);
                         ctx.rotate(-robotPosition.angle * Math.PI / 180);
                         
+                        // Draw robot body
                         ctx.fillStyle = '#00ff00';
                         ctx.beginPath();
                         ctx.moveTo(0, -10);
@@ -873,6 +945,14 @@ class VideoHost:
                         ctx.lineTo(7, 10);
                         ctx.closePath();
                         ctx.fill();
+                        
+                        // Draw forward direction indicator
+                        ctx.strokeStyle = '#ffffff';
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.moveTo(0, -8);
+                        ctx.lineTo(0, -12);
+                        ctx.stroke();
                         
                         ctx.restore();
                         
