@@ -39,12 +39,14 @@ class VideoHost:
             self.head_movement_info = None
             self.status_history = []  # Keep track of status history
             self.detection_points = []  # Store motion detection points
+            self.shutdown_flag = False  # Flag to indicate shutdown request
             
             # Register routes
             self.app.route('/')(self.index)
             self.app.route('/video_feed')(self.video_feed)
             self.app.route('/status')(self.get_status)
             self.app.route('/detection_points')(self.get_detection_points)
+            self.app.route('/shutdown', methods=['POST'])(self.shutdown)
             self.app.route('/favicon.ico')(self.favicon)
             self.initialized = True
     
@@ -291,6 +293,72 @@ class VideoHost:
                     }
                     .robot-position {
                         background: #00ff00;
+                    }
+                    .control-panel {
+                        position: fixed;
+                        top: 20px;
+                        right: 20px;
+                        background: rgba(0, 0, 0, 0.8);
+                        padding: 15px;
+                        border-radius: 5px;
+                        z-index: 1000;
+                    }
+                    .shutdown-btn {
+                        background: #ff3b30;
+                        color: white;
+                        border: none;
+                        padding: 10px 20px;
+                        border-radius: 5px;
+                        cursor: pointer;
+                        font-weight: bold;
+                        transition: background 0.3s;
+                    }
+                    .shutdown-btn:hover {
+                        background: #d63029;
+                    }
+                    .shutdown-btn.disabled {
+                        background: #666;
+                        cursor: not-allowed;
+                    }
+                    .confirmation-overlay {
+                        display: none;
+                        position: fixed;
+                        top: 0;
+                        left: 0;
+                        right: 0;
+                        bottom: 0;
+                        background: rgba(0, 0, 0, 0.8);
+                        z-index: 2000;
+                        align-items: center;
+                        justify-content: center;
+                    }
+                    .confirmation-dialog {
+                        background: #2a2a2a;
+                        padding: 20px;
+                        border-radius: 10px;
+                        text-align: center;
+                    }
+                    .confirmation-buttons {
+                        margin-top: 20px;
+                        display: flex;
+                        justify-content: center;
+                        gap: 10px;
+                    }
+                    .confirm-btn {
+                        background: #ff3b30;
+                        color: white;
+                        border: none;
+                        padding: 8px 16px;
+                        border-radius: 5px;
+                        cursor: pointer;
+                    }
+                    .cancel-btn {
+                        background: #666;
+                        color: white;
+                        border: none;
+                        padding: 8px 16px;
+                        border-radius: 5px;
+                        cursor: pointer;
                     }
                 </style>
                 <script>
@@ -905,9 +973,56 @@ class VideoHost:
                     window.addEventListener('load', () => {
                         const map = new DetectionMap();
                     });
+
+                    function initiateShutdown() {
+                        const overlay = document.getElementById('confirmationOverlay');
+                        overlay.style.display = 'flex';
+                    }
+
+                    function cancelShutdown() {
+                        const overlay = document.getElementById('confirmationOverlay');
+                        overlay.style.display = 'none';
+                    }
+
+                    function confirmShutdown() {
+                        const shutdownBtn = document.getElementById('shutdownBtn');
+                        shutdownBtn.disabled = true;
+                        shutdownBtn.classList.add('disabled');
+                        shutdownBtn.textContent = 'Shutting down...';
+
+                        fetch('/shutdown', {
+                            method: 'POST',
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            console.log('Shutdown initiated:', data);
+                            // Hide confirmation dialog
+                            const overlay = document.getElementById('confirmationOverlay');
+                            overlay.style.display = 'none';
+                        })
+                        .catch(error => {
+                            console.error('Error during shutdown:', error);
+                            shutdownBtn.disabled = false;
+                            shutdownBtn.classList.remove('disabled');
+                            shutdownBtn.textContent = 'Shutdown';
+                        });
+                    }
                 </script>
             </head>
             <body>
+                <div class="control-panel">
+                    <button id="shutdownBtn" class="shutdown-btn" onclick="initiateShutdown()">Shutdown</button>
+                </div>
+                <div id="confirmationOverlay" class="confirmation-overlay">
+                    <div class="confirmation-dialog">
+                        <h2>Confirm Shutdown</h2>
+                        <p>Are you sure you want to shut down the robot?</p>
+                        <div class="confirmation-buttons">
+                            <button class="confirm-btn" onclick="confirmShutdown()">Yes, Shutdown</button>
+                            <button class="cancel-btn" onclick="cancelShutdown()">Cancel</button>
+                        </div>
+                    </div>
+                </div>
                 <div class="container">
                     <div class="video-section">
                         <div class="video-wrapper">
@@ -1116,6 +1231,15 @@ class VideoHost:
     def get_detection_points(self):
         """API endpoint to get detection points"""
         return jsonify(self.detection_points)
+
+    def shutdown(self):
+        """Handle shutdown request from web interface"""
+        self.shutdown_flag = True
+        return jsonify({"status": "Shutdown initiated"})
+
+    def is_shutdown_requested(self):
+        """Check if shutdown has been requested"""
+        return self.shutdown_flag
 
 if __name__ == '__main__':
     # Test the video host independently

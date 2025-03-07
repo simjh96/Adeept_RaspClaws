@@ -370,7 +370,7 @@ def sequence_with_status():
         # Start with LEDs off
         RL.both_off()
         
-        while True:  # Main loop
+        while not host.is_shutdown_requested():  # Check shutdown flag
             # Start new detection cycle with LED
             RL.red()  # LED on for scanning
             host.update_status("Starting detection sequence...")
@@ -403,7 +403,6 @@ def sequence_with_status():
                 host.update_status("Moving head to last detected position...")
                 
                 with servo_lock:
-                    # Move head with progress updates and reduced delays
                     if head_movement_info['delta']['x'] != 0:
                         direction = 'right' if head_movement_info['delta']['x'] > 0 else 'left'
                         steps = abs(head_movement_info['delta']['x'])
@@ -415,18 +414,16 @@ def sequence_with_status():
                         steps = abs(head_movement_info['delta']['y'])
                         host.update_status(f"Adjusting head {direction} by {steps} steps...")
                         safe_look(direction, steps)
-                    time.sleep(0.2)  # Reduced delay
+                    time.sleep(0.2)
             
-            # Minimal delay for background model
             time.sleep(0.1)
             
             position = None
             scan_start_time = time.time()
             
-            while not position and not detector.is_moving:
+            while not position and not detector.is_moving and not host.is_shutdown_requested():  # Check shutdown flag
                 position = detector.detect_motion()
                 
-                # Update status periodically
                 if time.time() - scan_start_time > 1.0:
                     host.update_status("Scanning for movement...")
                     scan_start_time = time.time()
@@ -434,7 +431,6 @@ def sequence_with_status():
                 if position:
                     host.update_status("Motion detected! Moving to target...")
                     
-                    # Store current head position
                     with servo_lock:
                         last_head_position = {
                             'x': move.Left_Right_input,
@@ -449,13 +445,23 @@ def sequence_with_status():
                     move_to_object(position)
                     
                     host.update_status("Movement complete - Starting new scan...")
-                    time.sleep(0.1)  # Brief pause before next scan
+                    time.sleep(0.1)
                     break
                 
-                time.sleep(0.01)  # Minimal delay between scans
+                time.sleep(0.01)
+            
+            # Check shutdown flag before continuing
+            if host.is_shutdown_requested():
+                break
             
             # Ensure LED is off between detection cycles
             RL.both_off()
+            
+        # Clean shutdown
+        host.update_status("Shutting down...")
+        RL.both_off()
+        with servo_lock:
+            move.clean_all()
             
     except Exception as e:
         error_msg = f"Error in main sequence: {e}"
@@ -510,9 +516,18 @@ if __name__ == '__main__':
         RL.green()
         host.update_status("System ready - Motion detection active")
         
-        # Keep the main thread running
-        while True:
+        # Keep the main thread running and check for shutdown
+        while not host.is_shutdown_requested():
             time.sleep(1)
+            
+        # Clean shutdown
+        print("\nShutdown requested...")
+        host.update_status("Shutting down...")
+        with servo_lock:
+            move.clean_all()
+        RL.both_off()
+        host.cleanup()
+        sys.exit(0)
             
     except KeyboardInterrupt:
         print("\nShutting down...")
