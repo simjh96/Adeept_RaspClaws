@@ -16,6 +16,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'server'))
 import move
 import LED
 from babyHost import VideoHost
+from server.robotLight import RobotLight
 
 # Global servo lock to prevent competing servo control
 servo_lock = threading.Lock()
@@ -251,6 +252,10 @@ def move_to_object(position):
         move.stand()
 
 def sequence_with_status():
+    # Initialize LED control
+    RL = RobotLight()
+    RL.start()
+    
     try:
         host.update_status("Initializing robot position...")
         initialize_robot()
@@ -262,8 +267,11 @@ def sequence_with_status():
         while True:  # Main loop
             host.update_status("Starting detection sequence...")
             
-            # Turn on red LED for detection mode
-            LED.setRed()  # Red LED for detection
+            # Turn off all LEDs at start
+            RL.both_off()
+            
+            # Detection mode - Red LED
+            RL.red()
             
             # Reset motion detector for new detection sequence
             detector.reset_detection()
@@ -293,14 +301,14 @@ def sequence_with_status():
                         }
                     last_position = position
                     
-                    # Turn on blue LED for movement
-                    LED.setBlue()  # Blue LED for movement
+                    # Movement mode - Blue LED
+                    RL.blue()
                     
                     # Move towards object for 2 seconds
                     move_to_object(position)
                     
-                    # Turn off LEDs
-                    LED.turnOffRGB()
+                    # Turn off LEDs after sequence
+                    RL.both_off()
                     
                     # Wait before starting next detection
                     time.sleep(1)
@@ -312,13 +320,11 @@ def sequence_with_status():
         error_msg = f"Error in main sequence: {e}"
         print(error_msg)
         host.update_status(error_msg)
-        # Turn off LEDs safely
-        try:
-            LED.turnOffRGB()
-        except:
-            pass
+        RL.both_off()  # Ensure LEDs are off even if error occurs
         with servo_lock:
             move.clean_all()
+    finally:
+        RL.pause()  # Clean up LED thread
 
 if __name__ == '__main__':
     try:
