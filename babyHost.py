@@ -33,6 +33,9 @@ class VideoHost:
             self.camera = None
             self.port = port
             self.camera_lock = threading.Lock()
+            self.current_status = "Initializing..."
+            self.movement_info = None
+            self.head_movement_info = None
             
             # Register routes
             self.app.route('/')(self.index)
@@ -245,6 +248,40 @@ class VideoHost:
                         border-radius: 5px;
                         margin-bottom: 15px;
                     }
+                    .movement-info {
+                        background: rgba(0, 0, 0, 0.8);
+                        padding: 15px;
+                        border-radius: 5px;
+                        margin-top: 10px;
+                        font-family: monospace;
+                        border: 1px solid #00ff00;
+                    }
+                    .movement-title {
+                        color: #00ff00;
+                        font-size: 14px;
+                        margin-bottom: 10px;
+                        font-weight: bold;
+                    }
+                    .movement-detail {
+                        color: #888;
+                        margin: 5px 0;
+                    }
+                    .movement-highlight {
+                        color: #00ff00;
+                        font-weight: bold;
+                    }
+                    .movement-progress {
+                        height: 4px;
+                        background: #333;
+                        margin: 10px 0;
+                        border-radius: 2px;
+                    }
+                    .movement-progress-bar {
+                        height: 100%;
+                        background: #00ff00;
+                        border-radius: 2px;
+                        transition: width 0.3s ease;
+                    }
                 </style>
                 <script>
                     let detectionHistory = [];
@@ -440,14 +477,70 @@ class VideoHost:
                         }
                     }
                     
+                    function updateMovementInfo(data) {
+                        const container = document.querySelector('.movement-info');
+                        if (!container) return;
+
+                        if (data.movement_info) {
+                            const info = data.movement_info;
+                            const plan = info.movement_plan;
+                            
+                            let html = `
+                                <div class="movement-title">Movement Details</div>
+                                <div class="movement-detail">
+                                    Distance: <span class="movement-highlight">${info.initial_position.distance.toFixed(2)}</span> units
+                                </div>
+                                <div class="movement-detail">
+                                    Angle X: <span class="movement-highlight">${info.initial_position.angle_x.toFixed(2)}°</span>
+                                </div>
+                                <div class="movement-detail">
+                                    Angle Y: <span class="movement-highlight">${info.initial_position.angle_y.toFixed(2)}°</span>
+                                </div>
+                                <div class="movement-detail">
+                                    Status: <span class="movement-highlight">${info.status}</span>
+                                </div>
+                            `;
+
+                            // Add progress bar if status includes progress
+                            if (info.status.includes('%')) {
+                                const progress = parseInt(info.status.match(/\d+(?=%)/)[0]);
+                                html += `
+                                    <div class="movement-progress">
+                                        <div class="movement-progress-bar" style="width: ${progress}%"></div>
+                                    </div>
+                                `;
+                            }
+
+                            container.innerHTML = html;
+                        } else if (data.head_movement_info) {
+                            const info = data.head_movement_info;
+                            container.innerHTML = `
+                                <div class="movement-title">Head Movement</div>
+                                <div class="movement-detail">
+                                    From: <span class="movement-highlight">X: ${info.from.x}, Y: ${info.from.y}</span>
+                                </div>
+                                <div class="movement-detail">
+                                    To: <span class="movement-highlight">X: ${info.to.x}, Y: ${info.to.y}</span>
+                                </div>
+                                <div class="movement-detail">
+                                    Change: <span class="movement-highlight">X: ${info.delta.x}, Y: ${info.delta.y}</span>
+                                </div>
+                            `;
+                        } else {
+                            container.innerHTML = '';
+                        }
+                    }
+
                     function updateStatus() {
                         fetch('/status')
                             .then(response => response.json())
                             .then(data => {
                                 document.getElementById('processStatus').innerText = data.status;
                                 
+                                // Update movement info
+                                updateMovementInfo(data);
+                                
                                 if (data.detection_info && data.last_detection_image) {
-                                    // Update live overlay
                                     updateOverlay(data);
                                     
                                     const detection = {
@@ -455,18 +548,13 @@ class VideoHost:
                                         info: data.detection_info
                                     };
                                     
-                                    // Only add to history if it's a new detection
-                                    const lastDetection = detectionHistory[0];
                                     if (!lastDetection || 
                                         lastDetection.info.timestamp !== detection.info.timestamp) {
-                                        console.log("New detection added to history");
                                         updateDetectionHistory(detection);
                                     }
                                 }
                             })
-                            .catch(error => {
-                                console.error('Error updating status:', error);
-                            });
+                            .catch(error => console.error('Error updating status:', error));
                     }
                     
                     // Start when page loads
@@ -517,6 +605,7 @@ class VideoHost:
                     
                     <div class="detection-section">
                         <div id="processStatus" class="status-box">Initializing...</div>
+                        <div class="movement-info"></div>
                         <div class="history-section">
                             <div class="history-title">Detection History</div>
                             <div class="history-grid">
@@ -572,7 +661,9 @@ class VideoHost:
         status_data = {
             'status': self.current_status,
             'detection_info': None,
-            'last_detection_image': None
+            'last_detection_image': None,
+            'movement_info': self.movement_info,
+            'head_movement_info': self.head_movement_info
         }
         
         if self.detector:
@@ -589,6 +680,15 @@ class VideoHost:
     def update_status(self, status):
         """Update the current process status."""
         self.current_status = status
+
+    def update_movement_info(self, info):
+        """Update current movement information."""
+        self.movement_info = info
+        self.update_status(info['status'])
+
+    def update_head_movement(self, info):
+        """Update head movement information."""
+        self.head_movement_info = info
 
     def start(self):
         """Start the video hosting server in a separate thread."""
