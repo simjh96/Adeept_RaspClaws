@@ -292,8 +292,11 @@ if __name__ == '__main__':
         # Start video host (singleton ensures only one instance)
         host = VideoHost(port=5000)
         
-        # Initialize motion detector
-        detector = MotionDetector()
+        # Initialize camera first
+        host.init_camera()
+        
+        # Initialize motion detector with the camera instance
+        detector = MotionDetector(host)
         
         # Set detector in video host for status updates
         host.set_detector(detector)
