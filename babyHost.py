@@ -270,20 +270,28 @@ class VideoHost:
                         margin-bottom: 15px;
                         font-family: monospace;
                         white-space: pre-wrap;
-                        max-height: 200px;
+                        min-height: 200px;
+                        max-height: 300px;
+                        height: 250px;
                         overflow-y: auto;
+                        font-size: 14px;
+                        line-height: 1.4;
+                        word-break: break-word;
                     }
                     .movement-log {
                         color: #00ff00;
                         margin: 5px 0;
+                        padding: 2px 0;
                     }
                     .head-movement-log {
                         color: #00ffff;
                         margin: 5px 0;
+                        padding: 2px 0;
                     }
                     .progress-log {
                         color: #ffff00;
                         margin: 5px 0;
+                        padding: 2px 0;
                     }
                 </style>
                 <script>
@@ -613,23 +621,30 @@ class VideoHost:
                         });
                         
                         // Add padding
-                        const padding = 1; // 1 unit padding
+                        const padding = Math.max(2, (bounds.maxX - bounds.minX) * 0.2); // Dynamic padding based on area size
                         bounds.minX -= padding;
                         bounds.maxX += padding;
                         bounds.minY -= padding;
                         bounds.maxY += padding;
 
-                        // Ensure minimum view size
-                        const minSize = 2; // Minimum 2x2 units view
-                        if (bounds.maxX - bounds.minX < minSize) {
-                            const center = (bounds.maxX + bounds.minX) / 2;
-                            bounds.minX = center - minSize/2;
-                            bounds.maxX = center + minSize/2;
-                        }
-                        if (bounds.maxY - bounds.minY < minSize) {
-                            const center = (bounds.maxY + bounds.minY) / 2;
-                            bounds.minY = center - minSize/2;
-                            bounds.maxY = center + minSize/2;
+                        // Ensure minimum view size and maintain aspect ratio
+                        const minSize = 2;
+                        const width = Math.max(minSize, bounds.maxX - bounds.minX);
+                        const height = Math.max(minSize, bounds.maxY - bounds.minY);
+                        const aspect = width / height;
+                        
+                        if (aspect > 1) {
+                            // Width is larger, adjust height to match aspect ratio
+                            const newHeight = width / aspect;
+                            const heightDiff = newHeight - height;
+                            bounds.minY -= heightDiff / 2;
+                            bounds.maxY += heightDiff / 2;
+                        } else {
+                            // Height is larger, adjust width to match aspect ratio
+                            const newWidth = height * aspect;
+                            const widthDiff = newWidth - width;
+                            bounds.minX -= widthDiff / 2;
+                            bounds.maxX += widthDiff / 2;
                         }
                         
                         return bounds;
@@ -653,17 +668,25 @@ class VideoHost:
                         
                         // Calculate bounds and scale
                         const bounds = calculateMapBounds();
-                        const contentWidth = Math.max(2, bounds.maxX - bounds.minX);
-                        const contentHeight = Math.max(2, bounds.maxY - bounds.minY);
+                        const contentWidth = bounds.maxX - bounds.minX;
+                        const contentHeight = bounds.maxY - bounds.minY;
                         
-                        // Calculate scale to fit content
+                        // Calculate scale to fit content with padding
                         const scaleX = (width - mapPadding * 2) / contentWidth;
                         const scaleY = (height - mapPadding * 2) / contentHeight;
-                        mapScale = Math.min(scaleX, scaleY, initialMapScale);
+                        mapScale = Math.min(scaleX, scaleY);
                         
-                        // Calculate center offset
+                        // Calculate center offset to position content
+                        const centerOffsetX = (bounds.maxX + bounds.minX) / 2;
+                        const centerOffsetY = (bounds.maxY + bounds.minY) / 2;
+                        
+                        // Calculate center coordinates first
                         const centerX = width / 2;
                         const centerY = height / 2;
+                        
+                        // Create transform functions with closure over centerX/Y
+                        const transformX = x => centerX + (x - centerOffsetX) * mapScale;
+                        const transformY = y => centerY - (y - centerOffsetY) * mapScale;
                         
                         // Draw grid
                         ctx.strokeStyle = '#333';
@@ -678,7 +701,7 @@ class VideoHost:
                         const endY = gridCount/2;
                         
                         for(let x = startX; x <= endX; x += gridSize) {
-                            const screenX = centerX + x * mapScale;
+                            const screenX = transformX(centerOffsetX + x * gridSize);
                             ctx.beginPath();
                             ctx.moveTo(screenX, mapPadding);
                             ctx.lineTo(screenX, height - mapPadding);
@@ -686,7 +709,7 @@ class VideoHost:
                         }
                         
                         for(let y = startY; y <= endY; y += gridSize) {
-                            const screenY = centerY - y * mapScale;
+                            const screenY = transformY(centerOffsetY - y * gridSize);
                             ctx.beginPath();
                             ctx.moveTo(mapPadding, screenY);
                             ctx.lineTo(width - mapPadding, screenY);
@@ -699,29 +722,29 @@ class VideoHost:
                         
                         // X axis
                         ctx.beginPath();
-                        ctx.moveTo(mapPadding, centerY);
-                        ctx.lineTo(width - mapPadding, centerY);
+                        ctx.moveTo(mapPadding, transformY(centerOffsetY));
+                        ctx.lineTo(width - mapPadding, transformY(centerOffsetY));
                         ctx.stroke();
                         
                         // Y axis
                         ctx.beginPath();
-                        ctx.moveTo(centerX, mapPadding);
-                        ctx.lineTo(centerX, height - mapPadding);
+                        ctx.moveTo(transformX(centerOffsetX), mapPadding);
+                        ctx.lineTo(transformX(centerOffsetX), height - mapPadding);
                         ctx.stroke();
                         
                         // Draw origin marker
                         ctx.beginPath();
-                        ctx.arc(centerX, centerY, 5, 0, Math.PI * 2);
+                        ctx.arc(transformX(centerOffsetX), transformY(centerOffsetY), 5, 0, Math.PI * 2);
                         ctx.stroke();
                         
-                        return { ctx, width, height, centerX, centerY };
+                        return { ctx, width, height, centerX, centerY, transformX, transformY };
                     }
                     
                     function updateMap(data) {
                         const canvas = document.getElementById('mapCanvas');
                         if (!canvas) return;
                         
-                        const { ctx, width, height, centerX, centerY } = initMap();
+                        const { ctx, width, height, centerX, centerY, transformX, transformY } = initMap();
                         
                         // Draw path history
                         if (pathHistory.length > 0) {
@@ -729,8 +752,8 @@ class VideoHost:
                             ctx.lineWidth = 2;
                             ctx.beginPath();
                             pathHistory.forEach((pos, index) => {
-                                const x = centerX + pos.x * mapScale;
-                                const y = centerY - pos.y * mapScale;
+                                const x = transformX(pos.x);
+                                const y = transformY(pos.y);
                                 if (index === 0) {
                                     ctx.moveTo(x, y);
                                 } else {
@@ -746,8 +769,8 @@ class VideoHost:
                             const distance = info.position.distance;
                             const angle = info.position.angle_x * Math.PI / 180;
                             
-                            const x = centerX + distance * Math.cos(angle) * mapScale;
-                            const y = centerY - distance * Math.sin(angle) * mapScale;
+                            const x = transformX(distance * Math.cos(angle));
+                            const y = transformY(distance * Math.sin(angle));
                             
                             // Draw detection point
                             ctx.fillStyle = '#ff0000';
@@ -759,15 +782,15 @@ class VideoHost:
                             ctx.strokeStyle = '#440000';
                             ctx.setLineDash([5, 5]);
                             ctx.beginPath();
-                            ctx.moveTo(centerX, centerY);
+                            ctx.moveTo(transformX(0), transformY(0));
                             ctx.lineTo(x, y);
                             ctx.stroke();
                             ctx.setLineDash([]);
                         });
                         
                         // Draw current robot position
-                        const robotX = centerX + robotPosition.x * mapScale;
-                        const robotY = centerY - robotPosition.y * mapScale;
+                        const robotX = transformX(robotPosition.x);
+                        const robotY = transformY(robotPosition.y);
                         
                         // Draw robot triangle
                         ctx.save();
