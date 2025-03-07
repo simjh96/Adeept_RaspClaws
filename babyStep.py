@@ -337,7 +337,11 @@ def sequence_with_status():
                     'delta': {
                         'x': last_head_position['x'] - move.Left_Right_input,
                         'y': last_head_position['y'] - move.Up_Down_input
-                    }
+                    },
+                    'status': 'Calculating head movement...',
+                    'x': move.Left_Right_input,
+                    'y': move.Up_Down_input,
+                    'target': last_head_position
                 }
                 
                 host.update_head_movement(head_movement_info)
@@ -403,7 +407,7 @@ def sequence_with_status():
 if __name__ == '__main__':
     try:
         # Start video host (singleton ensures only one instance)
-        host = VideoHost(port=5000)
+        host = VideoHost(port=5000, debug=True)
         
         # Initialize camera first
         if not host.init_camera():

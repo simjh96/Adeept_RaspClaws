@@ -26,18 +26,24 @@ class VideoHost:
                     cls._instance = super(VideoHost, cls).__new__(cls)
         return cls._instance
     
-    def __init__(self, port=5000):
+    def __init__(self, port=5000, debug=True):
         if not hasattr(self, 'initialized'):
             self.app = Flask(__name__)
             CORS(self.app, supports_credentials=True)
             self.camera = None
             self.port = port
+            self.debug = debug
             self.camera_lock = threading.Lock()
+            self.current_status = "Initializing..."
+            self.movement_info = None
+            self.head_movement_info = None
+            self.status_history = []  # Keep track of status history
             
             # Register routes
             self.app.route('/')(self.index)
             self.app.route('/video_feed')(self.video_feed)
             self.app.route('/status')(self.get_status)
+            self.app.route('/favicon.ico')(self.favicon)
             self.initialized = True
     
     def init_camera(self):
@@ -245,6 +251,40 @@ class VideoHost:
                         border-radius: 5px;
                         margin-bottom: 15px;
                     }
+                    .map-section {
+                        background: #2a2a2a;
+                        padding: 15px;
+                        border-radius: 5px;
+                        margin-bottom: 15px;
+                    }
+                    #mapCanvas {
+                        width: 100%;
+                        height: 300px;
+                        background: #1a1a1a;
+                        border-radius: 3px;
+                    }
+                    .status-box {
+                        background: #2a2a2a;
+                        padding: 15px;
+                        border-radius: 5px;
+                        margin-bottom: 15px;
+                        font-family: monospace;
+                        white-space: pre-wrap;
+                        max-height: 200px;
+                        overflow-y: auto;
+                    }
+                    .movement-log {
+                        color: #00ff00;
+                        margin: 5px 0;
+                    }
+                    .head-movement-log {
+                        color: #00ffff;
+                        margin: 5px 0;
+                    }
+                    .progress-log {
+                        color: #ffff00;
+                        margin: 5px 0;
+                    }
                 </style>
                 <script>
                     let detectionHistory = [];
@@ -256,6 +296,7 @@ class VideoHost:
                     let overlayTimeout = null;
                     let mapPadding = 50; // padding around the content
                     let initialMapScale = 50; // Initial scale for empty map
+                    const MAX_HISTORY = 10; // Maximum number of history items to keep
 
                     function updateOverlay(data) {
                         const wrapper = document.querySelector('.video-wrapper');
@@ -357,6 +398,11 @@ class VideoHost:
                     }
 
                     function updateDetectionHistory(newDetection) {
+                        if (!newDetection || !newDetection.info) {
+                            console.warn('Invalid detection data received');
+                            return;
+                        }
+                        
                         // Create history item with timestamp
                         const historyItem = {
                             ...newDetection,
@@ -448,10 +494,49 @@ class VideoHost:
                         fetch('/status')
                             .then(response => response.json())
                             .then(data => {
-                                document.getElementById('processStatus').innerText = data.status;
+                                const statusBox = document.getElementById('processStatus');
+                                let statusText = '';
+                                
+                                // Add status history
+                                if (data.status_history && data.status_history.length > 0) {
+                                    statusText = data.status_history.join('\n') + '\n\n';
+                                }
+                                
+                                statusText += `Current Status: ${data.status}\n`;
+                                
+                                if (data.movement_info) {
+                                    statusText += `\nMovement Info:\n${data.movement_info.status}\n`;
+                                    if (data.movement_info.progress) {
+                                        statusText += `Progress: ${data.movement_info.progress}%\n`;
+                                    }
+                                    if (data.movement_info.details) {
+                                        statusText += `Details: ${data.movement_info.details}\n`;
+                                    }
+                                    
+                                    // Update robot position and map
+                                    if (data.movement_info.position) {
+                                        const newPos = data.movement_info.position;
+                                        if (robotPosition.x !== newPos.x || 
+                                            robotPosition.y !== newPos.y || 
+                                            robotPosition.angle !== newPos.angle) {
+                                            robotPosition = {...newPos};
+                                            pathHistory.push({...newPos});
+                                            updateMap(data);
+                                        }
+                                    }
+                                }
+                                
+                                if (data.head_movement_info) {
+                                    statusText += `\nHead Movement:\n`;
+                                    statusText += `Position: X=${data.head_movement_info.x}, Y=${data.head_movement_info.y}\n`;
+                                    if (data.head_movement_info.target) {
+                                        statusText += `Target: X=${data.head_movement_info.target.x}, Y=${data.head_movement_info.target.y}\n`;
+                                    }
+                                }
+                                
+                                statusBox.innerText = statusText;
                                 
                                 if (data.detection_info && data.last_detection_image) {
-                                    // Update live overlay
                                     updateOverlay(data);
                                     
                                     const detection = {
@@ -459,7 +544,6 @@ class VideoHost:
                                         info: data.detection_info
                                     };
                                     
-                                    // Only add to history if it's a new detection
                                     const lastDetection = detectionHistory[0];
                                     if (!lastDetection || 
                                         lastDetection.info.timestamp !== detection.info.timestamp) {
@@ -730,6 +814,9 @@ class VideoHost:
                     
                     <div class="detection-section">
                         <div id="processStatus" class="status-box">Initializing...</div>
+                        <div class="map-section">
+                            <canvas id="mapCanvas"></canvas>
+                        </div>
                         <div class="history-section">
                             <div class="history-title">Detection History</div>
                             <div class="history-grid">
@@ -785,7 +872,10 @@ class VideoHost:
         status_data = {
             'status': self.current_status,
             'detection_info': None,
-            'last_detection_image': None
+            'last_detection_image': None,
+            'movement_info': self.movement_info,
+            'head_movement_info': self.head_movement_info,
+            'status_history': self.status_history[-10:]  # Last 10 status updates
         }
         
         if self.detector:
@@ -801,21 +891,62 @@ class VideoHost:
         
     def update_status(self, status):
         """Update the current process status."""
+        if self.debug:
+            print(f"Status Update: {status}")
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.status_history.append(f"[{timestamp}] {status}")
         self.current_status = status
+
+    def update_movement_info(self, info):
+        """Update current movement information."""
+        if not isinstance(info, dict):
+            info = {'status': str(info)}
+        
+        # Ensure we have all required fields
+        if 'status' not in info:
+            info['status'] = 'Moving'
+        if 'position' not in info:
+            info['position'] = {'x': 0, 'y': 0, 'angle': 0}
+        if 'progress' not in info:
+            info['progress'] = None
+        if 'details' not in info:
+            info['details'] = None
+            
+        if self.debug:
+            print(f"Movement Update: {info}")
+            
+        self.movement_info = info
+        self.update_status(info['status'])
+
+    def update_head_movement(self, info):
+        """Update head movement information."""
+        if not isinstance(info, dict):
+            info = {'status': str(info)}
+            
+        # Ensure we have all required fields
+        if 'x' not in info:
+            info['x'] = 0
+        if 'y' not in info:
+            info['y'] = 0
+        if 'target' not in info:
+            info['target'] = None
+            
+        if self.debug:
+            print(f"Head Movement Update: {info}")
+            
+        self.head_movement_info = info
+        self.update_status(info['status'])
 
     def start(self):
         """Start the video hosting server in a separate thread."""
-        # Add status route
-        @self.app.route('/status')
-        def get_status_route():
-            status_data = self.get_status()
-            return Response(
-                json.dumps(status_data),
-                mimetype='application/json'
-            )
-        
         def run_server():
-            self.app.run(host='0.0.0.0', port=self.port, threaded=True)
+            self.app.run(
+                host='0.0.0.0',
+                port=self.port,
+                threaded=True,
+                debug=self.debug,
+                use_reloader=False  # Disable reloader in debug mode
+            )
             
         self.server_thread = threading.Thread(target=run_server)
         self.server_thread.daemon = True
@@ -830,6 +961,10 @@ class VideoHost:
             if self.camera:
                 # Add any necessary camera cleanup here
                 self.camera = None
+
+    def favicon(self):
+        """Return a transparent favicon to prevent 404 errors."""
+        return Response(status=204)
 
 if __name__ == '__main__':
     # Test the video host independently
