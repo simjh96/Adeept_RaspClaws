@@ -41,6 +41,7 @@ class VideoHost:
             self.app.route('/')(self.index)
             self.app.route('/video_feed')(self.video_feed)
             self.app.route('/status')(self.get_status)
+            self.app.route('/favicon.ico')(self.favicon)
             self.initialized = True
     
     def init_camera(self):
@@ -259,6 +260,7 @@ class VideoHost:
                     let overlayTimeout = null;
                     let mapPadding = 50; // padding around the content
                     let initialMapScale = 50; // Initial scale for empty map
+                    const MAX_HISTORY = 10; // Maximum number of history items to keep
 
                     function updateOverlay(data) {
                         const wrapper = document.querySelector('.video-wrapper');
@@ -360,6 +362,11 @@ class VideoHost:
                     }
 
                     function updateDetectionHistory(newDetection) {
+                        if (!newDetection || !newDetection.info) {
+                            console.warn('Invalid detection data received');
+                            return;
+                        }
+                        
                         // Create history item with timestamp
                         const historyItem = {
                             ...newDetection,
@@ -788,9 +795,7 @@ class VideoHost:
         status_data = {
             'status': self.current_status,
             'detection_info': None,
-            'last_detection_image': None,
-            'movement_info': self.movement_info,
-            'head_movement_info': self.head_movement_info
+            'last_detection_image': None
         }
         
         if self.detector:
@@ -807,15 +812,6 @@ class VideoHost:
     def update_status(self, status):
         """Update the current process status."""
         self.current_status = status
-
-    def update_movement_info(self, info):
-        """Update current movement information."""
-        self.movement_info = info
-        self.update_status(info['status'])
-
-    def update_head_movement(self, info):
-        """Update head movement information."""
-        self.head_movement_info = info
 
     def start(self):
         """Start the video hosting server in a separate thread."""
@@ -844,6 +840,10 @@ class VideoHost:
             if self.camera:
                 # Add any necessary camera cleanup here
                 self.camera = None
+
+    def favicon(self):
+        """Return a transparent favicon to prevent 404 errors."""
+        return Response(status=204)
 
 if __name__ == '__main__':
     # Test the video host independently
