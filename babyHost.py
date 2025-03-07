@@ -795,7 +795,9 @@ class VideoHost:
         status_data = {
             'status': self.current_status,
             'detection_info': None,
-            'last_detection_image': None
+            'last_detection_image': None,
+            'movement_info': self.movement_info,
+            'head_movement_info': self.head_movement_info
         }
         
         if self.detector:
@@ -812,6 +814,15 @@ class VideoHost:
     def update_status(self, status):
         """Update the current process status."""
         self.current_status = status
+
+    def update_movement_info(self, info):
+        """Update current movement information."""
+        self.movement_info = info
+        self.update_status(info['status'])
+
+    def update_head_movement(self, info):
+        """Update head movement information."""
+        self.head_movement_info = info
 
     def start(self):
         """Start the video hosting server in a separate thread."""
