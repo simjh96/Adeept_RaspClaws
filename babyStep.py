@@ -30,9 +30,15 @@ class MotionDetector:
         self.last_detection_image = None
         self.detection_info = None
         
+    def reset_detection(self):
+        """Reset the background model to start fresh detection."""
+        self.avg = None
+        self.last_motion = None
+        self.motion_detected = False
+        
     def detect_motion(self):
         """Detect motion and calculate object position relative to robot."""
-        frame = self.camera.get_frame_safe()  # Use thread-safe method
+        frame = self.camera.get_frame_safe()
         if frame is None:
             return None
             
@@ -42,6 +48,9 @@ class MotionDetector:
         if img is None:
             print("Failed to decode image")
             return None
+            
+        # Make a copy for drawing
+        display_img = img.copy()
             
         # Convert to grayscale and blur
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -71,13 +80,19 @@ class MotionDetector:
                 center_x = x + w//2
                 center_y = y + h//2
                 
-                # Draw rectangle and center point on the image
-                cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                cv2.circle(img, (center_x, center_y), 5, (0, 0, 255), -1)
+                # Draw rectangle and center point on the display image
+                cv2.rectangle(display_img, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                cv2.circle(display_img, (center_x, center_y), 5, (0, 0, 255), -1)
                 
                 # Calculate relative position from center of frame
-                frame_center_x = img.shape[1] // 2
-                frame_center_y = img.shape[0] // 2
+                frame_center_x = display_img.shape[1] // 2
+                frame_center_y = display_img.shape[0] // 2
+                
+                # Draw vector from center to object
+                cv2.line(display_img, 
+                        (frame_center_x, frame_center_y),
+                        (center_x, center_y),
+                        (0, 255, 0), 2)
                 
                 # Calculate angles (assuming 60° FOV for the camera)
                 angle_x = ((center_x - frame_center_x) / frame_center_x) * 30
@@ -101,7 +116,7 @@ class MotionDetector:
                 }
                 
                 # Save detection information with base64 encoded image
-                _, buffer = cv2.imencode('.jpg', img)
+                _, buffer = cv2.imencode('.jpg', display_img)
                 self.last_detection_image = base64.b64encode(buffer).decode('utf-8')
                 self.detection_info = {
                     'timestamp': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -226,42 +241,49 @@ def move_to_object(position):
     with servo_lock:
         move.stand()
 
-def main_sequence():
-    """Main sequence that runs movement and motion detection sequentially."""
+def sequence_with_status():
     try:
-        print("Initializing robot...")
+        host.update_status("Initializing robot position...")
         initialize_robot()
         
-        print("Starting initial movement sequence...")
-        perform_movement_sequence()
-        print("Movement sequence completed.")
-        
-        time.sleep(2)
-        
-        print("Starting motion detection...")
-        position = None
-        detection_count = 0
-        required_detections = 3  # Number of detections needed before moving
-        last_detection_time = None
-        
-        while detection_count < required_detections:
-            position = detector.detect_motion()
-            if position:
-                current_time = time.time()
-                if last_detection_time is None or current_time - last_detection_time > 1.0:
-                    detection_count += 1
-                    last_detection_time = current_time
-                    print(f"Motion detected ({detection_count}/{required_detections})")
-                    time.sleep(0.5)  # Wait to capture next detection
-            time.sleep(0.1)
-        
-        # Use the last detected position
-        print(f"Object detected at: {position}")
-        move_to_object(position)
-        print("Movement to object completed.")
-        
+        while True:  # Main detection loop
+            host.update_status("Starting movement sequence...")
+            perform_movement_sequence()
+            host.update_status("Movement sequence completed.")
+            
+            time.sleep(2)
+            
+            # Reset motion detector for new detection
+            detector.reset_detection()
+            
+            host.update_status("Starting motion detection...")
+            position = None
+            detection_count = 0
+            required_detections = 3
+            last_detection_time = None
+            
+            while detection_count < required_detections:
+                position = detector.detect_motion()
+                if position:
+                    current_time = time.time()
+                    if last_detection_time is None or current_time - last_detection_time > 1.0:
+                        detection_count += 1
+                        last_detection_time = current_time
+                        host.update_status(f"Motion detected ({detection_count}/{required_detections})")
+                        time.sleep(0.5)
+                time.sleep(0.1)
+            
+            host.update_status(f"Object detected at position: {position}")
+            move_to_object(position)
+            host.update_status("Movement to object completed. Standing by.")
+            
+            # Wait before starting next detection sequence
+            time.sleep(3)
+            
     except Exception as e:
-        print(f"Error in main sequence: {e}")
+        error_msg = f"Error in main sequence: {e}"
+        print(error_msg)
+        host.update_status(error_msg)
         with servo_lock:
             move.clean_all()
 
@@ -271,7 +293,7 @@ if __name__ == '__main__':
         host = VideoHost(port=5000)
         
         # Initialize motion detector
-        detector = MotionDetector(host)
+        detector = MotionDetector()
         
         # Set detector in video host for status updates
         host.set_detector(detector)
@@ -284,46 +306,6 @@ if __name__ == '__main__':
         host.update_status("Server initialized, waiting to start main sequence...")
         
         # Start main sequence in a separate thread
-        def sequence_with_status():
-            try:
-                host.update_status("Initializing robot position...")
-                initialize_robot()
-                
-                host.update_status("Starting movement sequence...")
-                perform_movement_sequence()
-                host.update_status("Movement sequence completed.")
-                
-                time.sleep(2)
-                
-                host.update_status("Starting motion detection...")
-                position = None
-                detection_count = 0
-                required_detections = 3  # Number of detections needed before moving
-                last_detection_time = None
-                
-                while detection_count < required_detections:
-                    position = detector.detect_motion()
-                    if position:
-                        current_time = time.time()
-                        if last_detection_time is None or current_time - last_detection_time > 1.0:
-                            detection_count += 1
-                            last_detection_time = current_time
-                            host.update_status(f"Motion detected ({detection_count}/{required_detections})")
-                            time.sleep(0.5)  # Wait to capture next detection
-                    time.sleep(0.1)
-                
-                # Use the last detected position
-                host.update_status(f"Object detected at position: {position}")
-                move_to_object(position)
-                host.update_status("Movement to object completed. Standing by.")
-                
-            except Exception as e:
-                error_msg = f"Error in main sequence: {e}"
-                print(error_msg)
-                host.update_status(error_msg)
-                with servo_lock:
-                    move.clean_all()
-        
         main_thread = threading.Thread(target=sequence_with_status)
         main_thread.daemon = True
         main_thread.start()

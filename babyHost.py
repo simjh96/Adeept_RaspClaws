@@ -3,8 +3,9 @@ import os
 import sys
 import threading
 import json
-from flask import Flask, Response
+from flask import Flask, Response, jsonify
 from flask_cors import CORS
+from datetime import datetime
 
 # Add server directory to Python path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'server'))
@@ -35,6 +36,7 @@ class VideoHost:
             # Register routes
             self.app.route('/')(self.index)
             self.app.route('/video_feed')(self.video_feed)
+            self.app.route('/status')(self.get_status)
             self.initialized = True
     
     def init_camera(self):
@@ -78,189 +80,105 @@ class VideoHost:
                         color: #fff;
                     }
                     .container {
-                        display: flex;
+                        display: grid;
+                        grid-template-columns: 2fr 1fr;
                         gap: 20px;
-                        max-width: 1400px;
-                        margin: 0 auto;
-                    }
-                    .video-container {
-                        flex: 1.5;
-                        background-color: #2d2d2d;
                         padding: 20px;
-                        border-radius: 10px;
-                        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-                    }
-                    .info-container {
-                        flex: 1;
-                        display: flex;
-                        flex-direction: column;
-                        gap: 20px;
-                    }
-                    .status-box, .detection-box {
-                        background-color: #2d2d2d;
-                        padding: 20px;
-                        border-radius: 10px;
-                        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-                    }
-                    h1, h2 {
+                        background: #1a1a1a;
                         color: #fff;
-                        margin-top: 0;
-                        border-bottom: 2px solid #444;
-                        padding-bottom: 10px;
+                    }
+                    .video-section {
+                        position: relative;
                     }
                     .video-wrapper {
                         position: relative;
                         width: 100%;
-                        margin-top: 10px;
-                        background-color: #000;
                     }
                     .video-feed {
                         width: 100%;
-                        border-radius: 5px;
-                        display: block;
+                        height: auto;
                     }
                     #videoOverlay {
                         position: absolute;
                         top: 0;
                         left: 0;
+                        width: 100%;
+                        height: 100%;
                         pointer-events: none;
-                        z-index: 10;
                     }
-                    .overlay-info {
-                        position: absolute;
-                        top: 10px;
-                        left: 10px;
-                        background: rgba(0,0,0,0.7);
+                    .detection-section {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 20px;
+                    }
+                    .main-detection {
+                        background: #2a2a2a;
                         padding: 10px;
                         border-radius: 5px;
-                        font-family: monospace;
-                        color: #00ff00;
-                        z-index: 20;
                     }
-                    .target-indicator {
-                        position: absolute;
-                        border: 2px solid #00ff00;
-                        border-radius: 50%;
-                        pointer-events: none;
-                        z-index: 15;
-                        transform: translate(-50%, -50%);
-                    }
-                    .vector-info {
-                        position: absolute;
-                        background: rgba(0,0,0,0.7);
-                        color: #00ff00;
-                        padding: 5px;
+                    #mainDetectionImage {
+                        width: 100%;
+                        height: auto;
                         border-radius: 3px;
-                        font-size: 12px;
-                        font-family: monospace;
-                        z-index: 20;
                     }
-                    .detection-grid {
-                        display: grid;
-                        grid-template-columns: repeat(2, 1fr);
-                        gap: 10px;
+                    #detectionTimestamp {
+                        display: block;
+                        text-align: center;
                         margin-top: 10px;
-                    }
-                    .stat-box {
-                        background: #363636;
-                        padding: 15px;
-                        border-radius: 5px;
-                        margin-top: 10px;
-                    }
-                    .stat-title {
                         color: #888;
-                        font-size: 12px;
-                        margin-bottom: 5px;
                     }
-                    .stat-value {
-                        color: #00ff00;
-                        font-size: 18px;
-                        font-family: monospace;
+                    .history-container {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+                        gap: 10px;
+                        background: #2a2a2a;
+                        padding: 10px;
+                        border-radius: 5px;
                     }
-                    .stat-unit {
-                        color: #666;
-                        font-size: 12px;
-                        margin-left: 5px;
+                    .history-image {
+                        width: 100%;
+                        height: auto;
+                        border-radius: 3px;
+                        cursor: pointer;
+                        transition: transform 0.2s;
+                    }
+                    .history-image:hover {
+                        transform: scale(1.05);
+                    }
+                    .compass-container {
+                        position: absolute;
+                        bottom: 20px;
+                        right: 20px;
+                        width: 100px;
+                        height: 100px;
                     }
                     .compass {
-                        width: 150px;
-                        height: 150px;
+                        width: 100%;
+                        height: 100%;
                         border-radius: 50%;
-                        background: #363636;
+                        border: 2px solid #00ff00;
                         position: relative;
-                        margin: 20px auto;
+                        background: rgba(0, 0, 0, 0.5);
                     }
                     .compass-arrow {
                         position: absolute;
                         top: 50%;
                         left: 50%;
                         width: 4px;
-                        height: 60px;
+                        height: 40px;
                         background: #00ff00;
                         transform-origin: bottom center;
                         transform: translate(-50%, -100%);
                     }
-                    .compass-labels {
+                    .compass-labels span {
                         position: absolute;
-                        width: 100%;
-                        height: 100%;
-                        top: 0;
-                        left: 0;
-                    }
-                    .compass-label {
-                        position: absolute;
-                        color: #888;
-                        font-size: 12px;
-                    }
-                    .status {
-                        padding: 10px;
-                        margin: 5px 0;
-                        border-radius: 5px;
-                        background-color: #363636;
                         color: #00ff00;
-                        font-family: monospace;
-                        font-size: 14px;
-                    }
-                    .detection-info {
-                        margin-top: 20px;
-                    }
-                    .detection-image-container {
-                        margin-top: 20px;
-                        position: relative;
-                    }
-                    .detection-image {
-                        width: 100%;
-                        border-radius: 5px;
-                        border: 2px solid #444;
-                    }
-                    .detection-timestamp {
-                        position: absolute;
-                        bottom: 10px;
-                        right: 10px;
-                        background-color: rgba(0,0,0,0.7);
-                        color: #fff;
-                        padding: 5px 10px;
-                        border-radius: 3px;
                         font-size: 12px;
                     }
-                    .history-container {
-                        display: flex;
-                        gap: 10px;
-                        overflow-x: auto;
-                        padding: 10px 0;
-                    }
-                    .history-image {
-                        width: 120px;
-                        height: 90px;
-                        object-fit: cover;
-                        border-radius: 5px;
-                        border: 2px solid #444;
-                        cursor: pointer;
-                        transition: border-color 0.3s;
-                    }
-                    .history-image:hover {
-                        border-color: #00ff00;
-                    }
+                    .compass-n { top: 5px; left: 50%; transform: translateX(-50%); }
+                    .compass-e { right: 5px; top: 50%; transform: translateY(-50%); }
+                    .compass-s { bottom: 5px; left: 50%; transform: translateX(-50%); }
+                    .compass-w { left: 5px; top: 50%; transform: translateY(-50%); }
                 </style>
                 <script>
                     let detectionHistory = [];
@@ -280,79 +198,141 @@ class VideoHost:
                         const ctx = canvas.getContext('2d');
                         ctx.clearRect(0, 0, canvas.width, canvas.height);
                         
-                        if (data.detection_info) {
-                            const info = data.detection_info;
-                            const pos = info.position;
-                            const center = info.center;
-                            const frameCenter = info.frame_center;
-                            
-                            // Scale coordinates to match video size
-                            const scaleX = canvas.width / frameCenter.x / 2;
-                            const scaleY = canvas.height / frameCenter.y / 2;
-                            
-                            const scaledCenter = {
-                                x: center.x * scaleX,
-                                y: center.y * scaleY
-                            };
-                            
-                            const scaledFrameCenter = {
-                                x: frameCenter.x * scaleX,
-                                y: frameCenter.y * scaleY
-                            };
-                            
-                            // Draw targeting reticle
-                            ctx.strokeStyle = '#00ff00';
-                            ctx.lineWidth = 2;
-                            
-                            // Outer circle
-                            ctx.beginPath();
-                            ctx.arc(scaledCenter.x, scaledCenter.y, 30, 0, Math.PI * 2);
-                            ctx.stroke();
-                            
-                            // Cross lines
-                            ctx.beginPath();
-                            ctx.moveTo(scaledCenter.x - 40, scaledCenter.y);
-                            ctx.lineTo(scaledCenter.x + 40, scaledCenter.y);
-                            ctx.moveTo(scaledCenter.x, scaledCenter.y - 40);
-                            ctx.lineTo(scaledCenter.x, scaledCenter.y + 40);
-                            ctx.stroke();
-                            
-                            // Draw vector from center to object
-                            ctx.beginPath();
-                            ctx.setLineDash([5, 5]);
-                            ctx.moveTo(scaledFrameCenter.x, scaledFrameCenter.y);
-                            ctx.lineTo(scaledCenter.x, scaledCenter.y);
-                            ctx.stroke();
-                            ctx.setLineDash([]);
-                            
-                            // Draw direction arrow
-                            const angle = Math.atan2(scaledCenter.y - scaledFrameCenter.y, 
-                                                   scaledCenter.x - scaledFrameCenter.x);
-                            const arrowLength = 20;
-                            
-                            ctx.beginPath();
-                            ctx.moveTo(scaledCenter.x, scaledCenter.y);
-                            ctx.lineTo(scaledCenter.x - arrowLength * Math.cos(angle - Math.PI/6),
-                                     scaledCenter.y - arrowLength * Math.sin(angle - Math.PI/6));
-                            ctx.lineTo(scaledCenter.x - arrowLength * Math.cos(angle + Math.PI/6),
-                                     scaledCenter.y - arrowLength * Math.sin(angle + Math.PI/6));
-                            ctx.closePath();
-                            ctx.fillStyle = '#00ff00';
-                            ctx.fill();
-                            
-                            // Update compass
-                            updateCompass(pos.angle_x);
-                            
-                            // Update stats
-                            updateStats(info);
-                            
-                            // Save centers for animation
-                            lastFrameCenter = scaledFrameCenter;
-                            lastObjectCenter = scaledCenter;
-                        }
-                        
                         // Draw scanning effect
                         drawScanningEffect(ctx, canvas.width, canvas.height);
+                        
+                        if (data.detection_info) {
+                            drawDetectionOverlay(ctx, data.detection_info, canvas.width, canvas.height);
+                        }
+                    }
+                    
+                    function drawDetectionOverlay(ctx, info, width, height) {
+                        const pos = info.position;
+                        const center = info.center;
+                        const frameCenter = info.frame_center;
+                        
+                        // Scale coordinates to match video size
+                        const scaleX = width / frameCenter.x / 2;
+                        const scaleY = height / frameCenter.y / 2;
+                        
+                        const scaledCenter = {
+                            x: center.x * scaleX,
+                            y: center.y * scaleY
+                        };
+                        
+                        const scaledFrameCenter = {
+                            x: frameCenter.x * scaleX,
+                            y: frameCenter.y * scaleY
+                        };
+                        
+                        // Draw targeting reticle
+                        ctx.strokeStyle = '#00ff00';
+                        ctx.lineWidth = 2;
+                        
+                        // Outer circle
+                        ctx.beginPath();
+                        ctx.arc(scaledCenter.x, scaledCenter.y, 30, 0, Math.PI * 2);
+                        ctx.stroke();
+                        
+                        // Cross lines
+                        ctx.beginPath();
+                        ctx.moveTo(scaledCenter.x - 40, scaledCenter.y);
+                        ctx.lineTo(scaledCenter.x + 40, scaledCenter.y);
+                        ctx.moveTo(scaledCenter.x, scaledCenter.y - 40);
+                        ctx.lineTo(scaledCenter.x, scaledCenter.y + 40);
+                        ctx.stroke();
+                        
+                        // Draw vector from center to object
+                        ctx.beginPath();
+                        ctx.setLineDash([5, 5]);
+                        ctx.moveTo(scaledFrameCenter.x, scaledFrameCenter.y);
+                        ctx.lineTo(scaledCenter.x, scaledCenter.y);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                        
+                        // Draw direction arrow
+                        const angle = Math.atan2(scaledCenter.y - scaledFrameCenter.y, 
+                                               scaledCenter.x - scaledFrameCenter.x);
+                        const arrowLength = 20;
+                        
+                        ctx.beginPath();
+                        ctx.moveTo(scaledCenter.x, scaledCenter.y);
+                        ctx.lineTo(scaledCenter.x - arrowLength * Math.cos(angle - Math.PI/6),
+                                 scaledCenter.y - arrowLength * Math.sin(angle - Math.PI/6));
+                        ctx.lineTo(scaledCenter.x - arrowLength * Math.cos(angle + Math.PI/6),
+                                 scaledCenter.y - arrowLength * Math.sin(angle + Math.PI/6));
+                        ctx.closePath();
+                        ctx.fillStyle = '#00ff00';
+                        ctx.fill();
+                        
+                        // Update compass
+                        updateCompass(pos.angle_x);
+                        
+                        // Update stats
+                        updateStats(info);
+                        
+                        return {
+                            scaledCenter,
+                            scaledFrameCenter,
+                            angle
+                        };
+                    }
+
+                    function updateDetectionHistory() {
+                        const container = document.getElementById('historyContainer');
+                        container.innerHTML = detectionHistory.map((item, index) => {
+                            const canvas = document.createElement('canvas');
+                            canvas.width = 120;
+                            canvas.height = 90;
+                            canvas.className = 'history-image';
+                            canvas.onclick = () => showHistoryDetail(index);
+                            canvas.title = item.info.timestamp;
+                            
+                            // Draw the image
+                            const img = new Image();
+                            img.onload = () => {
+                                const ctx = canvas.getContext('2d');
+                                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                                
+                                // Draw overlay on historical image
+                                if (item.overlay_data) {
+                                    drawDetectionOverlay(ctx, item.info, canvas.width, canvas.height);
+                                }
+                            };
+                            img.src = 'data:image/jpeg;base64,' + item.image;
+                            
+                            return canvas.outerHTML;
+                        }).join('');
+                    }
+
+                    function showHistoryDetail(index) {
+                        const item = detectionHistory[index];
+                        const detailCanvas = document.createElement('canvas');
+                        const img = new Image();
+                        
+                        img.onload = () => {
+                            detailCanvas.width = img.width;
+                            detailCanvas.height = img.height;
+                            const ctx = detailCanvas.getContext('2d');
+                            
+                            // Draw the base image
+                            ctx.drawImage(img, 0, 0);
+                            
+                            // Draw the overlay
+                            if (item.overlay_data) {
+                                drawDetectionOverlay(ctx, item.info, detailCanvas.width, detailCanvas.height);
+                            }
+                            
+                            // Convert to base64 and display
+                            document.getElementById('mainDetectionImage').src = detailCanvas.toDataURL();
+                            document.getElementById('mainDetectionImage').style.display = 'block';
+                            document.getElementById('detectionTimestamp').innerText = item.info.timestamp;
+                            
+                            // Update stats
+                            updateStats(item.info);
+                        };
+                        
+                        img.src = 'data:image/jpeg;base64,' + item.image;
                     }
                     
                     function drawScanningEffect(ctx, width, height) {
@@ -426,30 +406,43 @@ class VideoHost:
                                 document.getElementById('processStatus').innerText = data.status;
                                 
                                 if (data.detection_info) {
+                                    // Update overlay with new detection
                                     updateOverlay(data);
                                     
                                     if (data.last_detection_image) {
                                         const imgData = {
                                             image: data.last_detection_image,
-                                            timestamp: data.detection_info.timestamp,
-                                            info: data.detection_info
+                                            info: data.detection_info,
+                                            overlay_data: {
+                                                position: data.detection_info.position,
+                                                center: data.detection_info.center,
+                                                frame_center: data.detection_info.frame_center
+                                            }
                                         };
                                         
+                                        // Only add to history if it's a new detection
                                         if (!detectionHistory.length || 
-                                            detectionHistory[detectionHistory.length-1].timestamp !== imgData.timestamp) {
+                                            detectionHistory[detectionHistory.length-1].info.timestamp !== imgData.info.timestamp) {
                                             detectionHistory.push(imgData);
                                             if (detectionHistory.length > MAX_HISTORY) {
                                                 detectionHistory.shift();
                                             }
                                             updateDetectionHistory();
+                                            
+                                            // Show the latest detection
+                                            document.getElementById('mainDetectionImage').src = 
+                                                'data:image/jpeg;base64,' + data.last_detection_image;
+                                            document.getElementById('mainDetectionImage').style.display = 'block';
+                                            document.getElementById('detectionTimestamp').innerText = 
+                                                data.detection_info.timestamp;
                                         }
-                                        
-                                        document.getElementById('mainDetectionImage').src = 
-                                            'data:image/jpeg;base64,' + data.last_detection_image;
-                                        document.getElementById('mainDetectionImage').style.display = 'block';
-                                        document.getElementById('detectionTimestamp').innerText = 
-                                            data.detection_info.timestamp;
                                     }
+                                } else {
+                                    // Clear current overlay when no detection
+                                    const canvas = document.getElementById('videoOverlay');
+                                    const ctx = canvas.getContext('2d');
+                                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                                    drawScanningEffect(ctx, canvas.width, canvas.height);
                                 }
                             });
                     }
@@ -477,42 +470,36 @@ class VideoHost:
             </head>
             <body>
                 <div class="container">
-                    <div class="video-container">
-                        <h1>Live Camera Feed</h1>
+                    <div class="video-section">
                         <div class="video-wrapper">
-                            <img class="video-feed" src="/video_feed">
+                            <img class="video-feed" src="{{ url_for('video_feed') }}">
                             <canvas id="videoOverlay"></canvas>
-                            <div class="overlay-info">
-                                <div id="scanStatus">Scanning...</div>
-                            </div>
                         </div>
-                        <div class="compass">
-                            <div class="compass-arrow"></div>
-                            <div class="compass-labels">
-                                <div class="compass-label" style="top: 5px; left: 50%; transform: translateX(-50%);">0°</div>
-                                <div class="compass-label" style="top: 50%; right: 5px; transform: translateY(-50%);">90°</div>
-                                <div class="compass-label" style="bottom: 5px; left: 50%; transform: translateX(-50%);">180°</div>
-                                <div class="compass-label" style="top: 50%; left: 5px; transform: translateY(-50%);">-90°</div>
+                        <div class="compass-container">
+                            <div class="compass">
+                                <div class="compass-arrow"></div>
+                                <div class="compass-labels">
+                                    <span class="compass-n">N</span>
+                                    <span class="compass-e">E</span>
+                                    <span class="compass-s">S</span>
+                                    <span class="compass-w">W</span>
+                                </div>
                             </div>
                         </div>
                     </div>
-                    <div class="info-container">
-                        <div class="status-box">
-                            <h2>Process Status</h2>
-                            <div id="processStatus" class="status">
-                                Initializing...
-                            </div>
+                    
+                    <div class="detection-section">
+                        <div class="main-detection">
+                            <img id="mainDetectionImage" style="display: none;">
+                            <span id="detectionTimestamp"></span>
                         </div>
-                        <div class="detection-box">
-                            <h2>Detection Stats</h2>
-                            <div id="statsContainer"></div>
-                            <div class="detection-image-container">
-                                <img id="mainDetectionImage" class="detection-image" style="display: none;">
-                                <div id="detectionTimestamp" class="detection-timestamp"></div>
-                            </div>
-                            <h2>Detection History</h2>
-                            <div id="historyContainer" class="history-container"></div>
+                        <div class="history-container" id="historyContainer">
+                            <!-- Detection history will be populated here -->
                         </div>
+                    </div>
+                    
+                    <div class="stats-section">
+                        <!-- Stats content -->
                     </div>
                 </div>
             </body>
@@ -538,13 +525,18 @@ class VideoHost:
     
     def get_status(self):
         """Get current process status and detection information."""
-        if hasattr(self, 'detector'):
-            return {
-                'status': self.current_status,
-                'detection_info': self.detector.detection_info,
-                'last_detection_image': self.detector.last_detection_image
-            }
-        return {'status': 'Initializing...'}
+        status_data = {
+            'status': self.current_status,
+            'detection_info': None,
+            'last_detection_image': None
+        }
+        
+        if self.detector:
+            if self.detector.detection_info:
+                status_data['detection_info'] = self.detector.detection_info
+                status_data['last_detection_image'] = self.detector.last_detection_image
+        
+        return status_data
     
     def set_detector(self, detector):
         """Set the motion detector instance for status updates."""
