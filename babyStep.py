@@ -263,9 +263,9 @@ def sequence_with_status():
             host.update_status("Starting detection sequence...")
             
             # Turn on red LED for detection mode
-            LED.setup()  # Initialize LED
-            LED.ledIndex(0, 255, 0, 0)  # Red LED for detection
-            LED.ledIndex(1, 0, 0, 0)    # Turn off second LED
+            LED.LED_control(LED.LED_R, 100)  # Red LED for detection
+            LED.LED_control(LED.LED_G, 0)
+            LED.LED_control(LED.LED_B, 0)
             
             # Reset motion detector for new detection sequence
             detector.reset_detection()
@@ -296,15 +296,17 @@ def sequence_with_status():
                     last_position = position
                     
                     # Turn on blue LED for movement
-                    LED.ledIndex(0, 0, 0, 255)  # Blue LED for movement
-                    LED.ledIndex(1, 0, 0, 0)    # Turn off second LED
+                    LED.LED_control(LED.LED_R, 0)
+                    LED.LED_control(LED.LED_G, 0)
+                    LED.LED_control(LED.LED_B, 100)  # Blue LED for movement
                     
                     # Move towards object for 2 seconds
                     move_to_object(position)
                     
                     # Turn off LEDs
-                    LED.ledIndex(0, 0, 0, 0)
-                    LED.ledIndex(1, 0, 0, 0)
+                    LED.LED_control(LED.LED_R, 0)
+                    LED.LED_control(LED.LED_G, 0)
+                    LED.LED_control(LED.LED_B, 0)
                     
                     # Wait before starting next detection
                     time.sleep(1)
@@ -318,8 +320,9 @@ def sequence_with_status():
         host.update_status(error_msg)
         # Turn off LEDs safely
         try:
-            LED.ledIndex(0, 0, 0, 0)
-            LED.ledIndex(1, 0, 0, 0)
+            LED.LED_control(LED.LED_R, 0)
+            LED.LED_control(LED.LED_G, 0)
+            LED.LED_control(LED.LED_B, 0)
         except:
             pass
         with servo_lock:
